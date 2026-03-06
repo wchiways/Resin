@@ -77,7 +77,7 @@ Docker Compose is the recommended quick-start path:
 # docker-compose.yml
 services:
   resin:
-    image: ${RESIN_IMAGE:-ghcr.io/wchiways/resin_socks:latest}
+    image: ghcr.io/wchiways/resin_socks:latest
     container_name: resin
     restart: unless-stopped
     environment:
@@ -300,6 +300,7 @@ Different clients integrate Resin differently, with different code-intrusion lev
 If you are a developer and want AI to help modify an existing project for native Resin sticky integration, use:
 
 - [doc/integration-prompt.md](doc/integration-prompt.md)
+- [Shell proxy setup guide (PowerShell / Bash / Zsh)](doc/proxy-shell-setup.md)
 
 ---
 

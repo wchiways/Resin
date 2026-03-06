@@ -77,7 +77,7 @@
 # docker-compose.yml
 services:
   resin:
-    image: ${RESIN_IMAGE:-ghcr.io/wchiways/resin_socks:latest}
+    image: ghcr.io/wchiways/resin_socks:latest
     container_name: resin
     restart: unless-stopped
     environment:
@@ -283,6 +283,7 @@ curl "http://127.0.0.1:2260/my-token/MyPlatform/https/api.example.com/v1/orders"
 👉 **极速集成脚本/提示词（Prompt）：**  
 如果你是开发者，想要修改现有项目原生接入 Resin 粘性代理，你可以直接把下面这个模板喂给 AI 帮你写代码：
 - [doc/integration-prompt.md](doc/integration-prompt.md)
+- [Shell 代理配置指南（PowerShell / Bash / Zsh）](doc/proxy-shell-setup.zh-CN.md)
 
 ---
 

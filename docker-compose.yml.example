@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ${RESIN_IMAGE:-ghcr.io/wchiways/resin_socks:latest}
+    image: ghcr.io/wchiways/resin_socks:latest
     container_name: resin
     restart: unless-stopped
     environment:
