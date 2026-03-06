@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import {
+  Activity,
   AlertTriangle,
   Database,
   LayoutDashboard,
@@ -34,6 +35,7 @@ const navItems: NavItem[] = [
   { label: "请求头规则", path: "/rules", icon: Regex },
   { label: "请求日志", path: "/request-logs", icon: Logs },
   { label: "资源", path: "/resources", icon: Database },
+  { label: "服务状态", path: "/service-status", icon: Activity },
   { label: "系统配置", path: "/system-config", icon: Settings },
 ];
 

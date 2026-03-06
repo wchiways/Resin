@@ -1,10 +1,14 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
+	"runtime"
 	"sync/atomic"
+	"time"
 
 	"github.com/Resinat/Resin/internal/config"
+	"github.com/Resinat/Resin/internal/metrics"
 	"github.com/Resinat/Resin/internal/service"
 )
 
@@ -144,5 +148,83 @@ func systemEnvConfigSnapshot(envCfg *config.EnvConfig) *systemEnvConfigResponse 
 		ProxyTokenSet:                                   proxyTokenSet,
 		AdminTokenWeak:                                  adminTokenSet && config.IsWeakToken(envCfg.AdminToken),
 		ProxyTokenWeak:                                  proxyTokenSet && config.IsWeakToken(envCfg.ProxyToken),
+	}
+}
+
+type systemStatusResponse struct {
+	Version       string `json:"version"`
+	GitCommit     string `json:"git_commit"`
+	BuildTime     string `json:"build_time"`
+	StartedAt     string `json:"started_at"`
+	UptimeSeconds int64  `json:"uptime_seconds"`
+
+	HTTPProxy   serviceStatusEntry `json:"http_proxy"`
+	SOCKS5Proxy serviceStatusEntry `json:"socks5_proxy"`
+
+	Memory  memoryStatus  `json:"memory"`
+	Traffic trafficStatus `json:"traffic"`
+}
+
+type serviceStatusEntry struct {
+	Enabled       bool   `json:"enabled"`
+	ListenAddress string `json:"listen_address"`
+}
+
+type memoryStatus struct {
+	AllocBytes     uint64 `json:"alloc_bytes"`
+	SysBytes       uint64 `json:"sys_bytes"`
+	HeapAllocBytes uint64 `json:"heap_alloc_bytes"`
+	NumGC          uint32 `json:"num_gc"`
+}
+
+type trafficStatus struct {
+	TotalIngressBytes int64 `json:"total_ingress_bytes"`
+	TotalEgressBytes  int64 `json:"total_egress_bytes"`
+}
+
+// HandleSystemStatus returns a handler for GET /api/v1/system/status.
+func HandleSystemStatus(
+	info service.SystemInfo,
+	envCfg *config.EnvConfig,
+	metricsManager *metrics.Manager,
+) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var ms runtime.MemStats
+		runtime.ReadMemStats(&ms)
+
+		snap := metricsManager.Collector().Snapshot()
+
+		socks5Enabled := envCfg.Socks5Port != 0
+		var socks5Addr string
+		if socks5Enabled {
+			socks5Addr = fmt.Sprintf("%s:%d", envCfg.ListenAddress, envCfg.Socks5Port)
+		}
+
+		resp := systemStatusResponse{
+			Version:       info.Version,
+			GitCommit:     info.GitCommit,
+			BuildTime:     info.BuildTime,
+			StartedAt:     info.StartedAt.Format(time.RFC3339),
+			UptimeSeconds: int64(time.Since(info.StartedAt).Seconds()),
+			HTTPProxy: serviceStatusEntry{
+				Enabled:       true,
+				ListenAddress: fmt.Sprintf("%s:%d", envCfg.ListenAddress, envCfg.ResinPort),
+			},
+			SOCKS5Proxy: serviceStatusEntry{
+				Enabled:       socks5Enabled,
+				ListenAddress: socks5Addr,
+			},
+			Memory: memoryStatus{
+				AllocBytes:     ms.Alloc,
+				SysBytes:       ms.Sys,
+				HeapAllocBytes: ms.HeapAlloc,
+				NumGC:          ms.NumGC,
+			},
+			Traffic: trafficStatus{
+				TotalIngressBytes: snap.IngressBytes,
+				TotalEgressBytes:  snap.EgressBytes,
+			},
+		}
+		WriteJSON(w, http.StatusOK, resp)
 	}
 }

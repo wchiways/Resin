@@ -153,3 +153,27 @@ func (l *requestLifecycle) setRouteResult(result routing.RouteResult) {
 	l.log.NodeTag = result.NodeTag
 	l.log.EgressIP = result.EgressIP.String()
 }
+
+// newSOCKS5RequestLifecycle creates a request lifecycle for a SOCKS5 tunnel
+// connection where no *http.Request is available.
+func newSOCKS5RequestLifecycle(events EventEmitter, clientAddr string) *requestLifecycle {
+	clientIP := clientAddr
+	if host, _, err := net.SplitHostPort(clientAddr); err == nil {
+		clientIP = host
+	}
+	now := time.Now()
+	return &requestLifecycle{
+		startedAt: now,
+		events:    events,
+		finished: RequestFinishedEvent{
+			ProxyType: ProxyTypeSOCKS5,
+			IsConnect: true,
+		},
+		log: RequestLogEntry{
+			StartedAtNs: now.UnixNano(),
+			ProxyType:   ProxyTypeSOCKS5,
+			ClientIP:    clientIP,
+			HTTPMethod:  "SOCKS5_CONNECT",
+		},
+	}
+}

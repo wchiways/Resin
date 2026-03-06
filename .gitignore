@@ -1,3 +1,6 @@
 /resin
 sing-box-reference
 .agents
+.claude/
+.idea/
+.spec-workflow/

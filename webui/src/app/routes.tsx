@@ -11,6 +11,7 @@ import { RequestLogsPage } from "../features/requestLogs/RequestLogsPage";
 import { RulesPage } from "../features/rules/RulesPage";
 import { SubscriptionPage } from "../features/subscriptions/SubscriptionPage";
 import { SystemConfigPage } from "../features/systemConfig/SystemConfigPage";
+import { ServiceStatusPage } from "../features/serviceStatus/ServiceStatusPage";
 
 function NodesRoute() {
   const location = useLocation();
@@ -39,6 +40,7 @@ export function AppRoutes() {
         <Route path="/request-logs" element={<RequestLogsPage />} />
         <Route path="/resources" element={<GeoIPPage />} />
         <Route path="/system-config" element={<SystemConfigPage />} />
+        <Route path="/service-status" element={<ServiceStatusPage />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
