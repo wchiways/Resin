@@ -27,7 +27,7 @@ It helps shield your services from unstable upstream proxies and aggregates them
 - **Massive-scale management**: Easily handles 100k+ proxy nodes with native high-concurrency performance.
 - **Smart scheduling and circuit breaking**: Fully automated **passive + active** health checks, outbound IP probing, and latency analysis to remove bad nodes precisely. Uses P2C plus domain-aware latency-weighted scoring for optimal node selection.
 - **Business-friendly sticky proxying**: Keeps the same business account bound to a stable outbound IP. If a node fails, Resin seamlessly switches to another node with the same IP.
-- **Dual access modes**: Supports both standard forward proxy (HTTP Proxy) and URL-based reverse proxy.
+- **Dual access modes**: Supports both standard forward proxy (HTTP Proxy), URL-based reverse proxy, and SOCKS5 proxy.
 - **Observability**: Detailed metrics and logs, plus a visual Web UI. Includes complete structured request logs for querying and auditing by platform, account, target site, and more.
 - **Simple and powerful**: Works out of the box with default settings, while still offering deep customization for enterprise-grade needs.
 - **Cross-subscription deduplication**: Automatically merges identical nodes from different subscriptions and shares their health state.
@@ -86,8 +86,10 @@ services:
       RESIN_PROXY_TOKEN: "my-token" # Change to your proxy password
       RESIN_LISTEN_ADDRESS: 0.0.0.0
       RESIN_PORT: 2260
+      # RESIN_SOCKS5_PORT: 1080   # Optional: enable SOCKS5 proxy
     ports:
       - "2260:2260"
+      # - "1080:1080"              # Uncomment if SOCKS5 is enabled
     volumes:
       - ./data/cache:/var/cache/resin
       - ./data/state:/var/lib/resin
@@ -190,6 +192,33 @@ curl -x http://127.0.0.1:2260 \
   https://api.ipify.org
 ```
 
+#### Method 1.5: SOCKS5 Proxy
+
+Resin supports SOCKS5 proxy access on a dedicated port. Enable it by setting `RESIN_SOCKS5_PORT` (e.g. `1080`).
+
+SOCKS5 uses the same identity format as forward proxy, mapped to SOCKS5 username/password:
+
+| AUTH_VERSION | Username | Password |
+| :--- | :--- | :--- |
+| `V1` (recommended) | `Platform.Account` | `RESIN_PROXY_TOKEN` |
+| `LEGACY_V0` | `RESIN_PROXY_TOKEN` | `Platform:Account` |
+| Token empty | (optional identity) | (ignored) |
+
+Example with curl (V1):
+
+```bash
+curl -x socks5://Default.user_tom:my-token@127.0.0.1:1080 https://api.ipify.org
+```
+
+Telegram SOCKS5 configuration:
+
+```
+Server:   <your-server-ip>
+Port:     1080
+Username: Default.telegram
+Password: my-token
+```
+
 #### Method 2: Reverse proxy (URL Account, quick/manual debug)
 
 By replacing your service BaseURL with Resin reverse-proxy URL, traffic goes through Resin directly.
@@ -284,6 +313,7 @@ RESIN_CACHE_DIR=./data/cache \
 RESIN_LOG_DIR=./data/log \
 RESIN_LISTEN_ADDRESS=0.0.0.0 \
 RESIN_PORT=2260 \
+# RESIN_SOCKS5_PORT=1080 \
 ./resin
 ```
 </details>
@@ -314,6 +344,7 @@ RESIN_CACHE_DIR=./data/cache \
 RESIN_LOG_DIR=./data/log \
 RESIN_LISTEN_ADDRESS=127.0.0.1 \
 RESIN_PORT=2260 \
+# RESIN_SOCKS5_PORT=1080 \
 ./resin
 ```
 </details>
@@ -330,6 +361,8 @@ RESIN_PORT=2260 \
   - **A**: Yes. See [doc/v1.0.0-migration-guide.md](doc/v1.0.0-migration-guide.md).
 - **Q: How to write reverse-proxy paths for WebSocket (ws/wss)?**
   - **A**: In the URL path, the protocol field must still be `http` or `https` (not `ws`/`wss`). Resin auto-detects and handles WebSocket upgrade.
+- **Q: How to enable SOCKS5 proxy?**
+  - **A**: Set `RESIN_SOCKS5_PORT` to a non-zero port (e.g. `1080`). The SOCKS5 port must differ from `RESIN_PORT`. Remember to map the port in Docker if applicable.
 
 ---
 

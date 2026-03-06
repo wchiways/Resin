@@ -170,6 +170,21 @@ URL 不允许包含查询部分与 ? 字符。
 ### 正向代理 CONNECT 特殊行为
 正向代理的 CONNECT 请求在成功建立隧道后，返回 `HTTP/1.1 200 Connection Established`。此后 Resin 不再介入 HTTP 语义——连接变为双向 TCP 隧道。隧道建立后的网络错误不会产生 HTTP 错误响应；连接将直接中断。
 
+### SOCKS5 代理
+
+当 `RESIN_SOCKS5_PORT` 设为非零值时，Resin 在独立端口启动 SOCKS5 代理服务器（RFC 1928/1929）。
+
+* 仅支持 CONNECT 命令（CMD=0x01），不支持 BIND 和 UDP ASSOCIATE。
+* 认证方式由 `RESIN_PROXY_TOKEN` 和 `RESIN_AUTH_VERSION` 决定：
+  * Token 非空时：强制要求 Username/Password 认证（0x02）。
+  * Token 为空时：优先 Username/Password（用于身份提取），也接受无认证（0x00）。
+* Username/Password 到 Platform/Account 的映射：
+  * `V1`：Username = `Platform.Account`，Password = `TOKEN`
+  * `LEGACY_V0`：Username = `TOKEN`，Password = `Platform:Account`
+  * Token 为空：Username 为可选身份标识，Password 忽略
+* 认证通过后，路由逻辑与正向代理完全一致（P2C 选路、粘性租约、熔断）。
+* 隧道建立后为双向 TCP 拷贝，流量计入 metrics 统计。
+
 ### 错误响应示例
 正向代理认证失败：
 ```
@@ -1064,6 +1079,46 @@ Resin 需要做实事与历史的统计数据，用于 Dashboard 展示。
   "cache_flush_dirty_threshold": 1000
 }
 ```
+
+#### 获取系统运行状态
+
+**GET** `/system/status`
+
+返回系统运行时状态快照，包括版本信息、代理服务状态、内存使用和流量统计。
+
+```json
+{
+  "version": "1.0.0",
+  "git_commit": "abc1234",
+  "build_time": "2026-03-06T10:00:00Z",
+  "started_at": "2026-03-06T08:00:00Z",
+  "uptime_seconds": 7200,
+  "http_proxy": {
+    "enabled": true,
+    "listen_address": "0.0.0.0:2260"
+  },
+  "socks5_proxy": {
+    "enabled": true,
+    "listen_address": "0.0.0.0:1080"
+  },
+  "memory": {
+    "alloc_bytes": 12345678,
+    "sys_bytes": 23456789,
+    "heap_alloc_bytes": 11234567,
+    "num_gc": 42
+  },
+  "traffic": {
+    "total_ingress_bytes": 1234567890,
+    "total_egress_bytes": 987654321
+  }
+}
+```
+
+数据来源：
+* 版本/运行时：`service.SystemInfo` + `time.Since(startedAt)`
+* HTTP/SOCKS5：`config.EnvConfig` 中的 `ResinPort` / `Socks5Port`
+* 内存：`runtime.MemStats`
+* 流量：`metrics.Collector.Snapshot().IngressBytes / EgressBytes`
 
 #### 获取环境变量配置快照（只读）
 
@@ -2240,6 +2295,7 @@ GeoIP 与订阅的下载都有错误重试的需求。
 * RESIN_LOG_DIR：日志目录。默认 /var/log/resin
 * RESIN_LISTEN_ADDRESS：Resin 统一监听地址。默认 `0.0.0.0`
 * RESIN_PORT：Resin 单端口（控制面 API + 正向代理 + 反向代理 + WebUI）。默认 2260
+* RESIN_SOCKS5_PORT：SOCKS5 代理独立监听端口。默认 0（禁用）。非零时启用 SOCKS5 代理，端口不能与 RESIN_PORT 相同。
 * RESIN_API_MAX_BODY_BYTES：控制面 API（`/api/*`）请求体最大字节数。超限返回 `413 PAYLOAD_TOO_LARGE`。仅作用于控制面，不作用于正/反向代理数据面。默认 1048576（1 MiB）。
 
 核心设置：

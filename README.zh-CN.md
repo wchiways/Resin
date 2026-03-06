@@ -25,7 +25,7 @@
 - **海量接管**：轻松管理十万级规模的代理节点。高性能，原生支持高并发。
 - **智能调度与熔断**：全自动的 **被动+主动** 健康探测、出口 IP 探测、延迟分析，精准剔除坏节点。采用 P2C 算法结合按域名的延迟加权评分，智能选择最优节点。
 - **业务友好的粘性代理**：让同一业务账号优先绑定同一出口 IP，节点异常时自动切换同 IP 节点，在多数场景下减少业务波动。
-- **双模接入**：同时支持标准正向代理（HTTP Proxy）与 URL 反向代理（Reverse Proxy）。
+- **双模接入**：同时支持标准正向代理（HTTP Proxy）、URL 反向代理（Reverse Proxy）与 SOCKS5 代理。
 - **可观测性**：提供详细的性能指标与日志记录，快速掌控全局（可视化 Web 管理后台）。包括完整的结构化请求日志，支持按平台、账号、目标站点等维度查询与审计。
 - **简单与强大兼得**：开箱即用的默认配置与深度自定义功能。无论你是只需几分钟跑通简单场景的个人使用者，还是需要高并发与高可用性的企业级团队，Resin 都能游刃有余。
 - **跨订阅智能去重**：不同订阅中配置相同的节点自动合并，共享健康状态，避免重复探测。
@@ -86,8 +86,10 @@ services:
       RESIN_PROXY_TOKEN: "my-token" # 修改为你的代理密码
       RESIN_LISTEN_ADDRESS: 0.0.0.0
       RESIN_PORT: 2260
+      # RESIN_SOCKS5_PORT: 1080   # 可选：启用 SOCKS5 代理
     ports:
       - "2260:2260"
+      # - "1080:1080"              # 启用 SOCKS5 时取消注释
     volumes:
       - ./data/cache:/var/cache/resin
       - ./data/state:/var/lib/resin
@@ -164,9 +166,9 @@ curl http://127.0.0.1:2260/my-token/MyPlatform/https/api.ipify.org
 ### 粘性代理接入格式
 
 #### 方式一：正向代理接入 (HTTP Proxy)
-当 `RESIN_AUTH_VERSION=V1` 时，认证身份格式为：`Platform.Account:RESIN_PROXY_TOKEN`。  
+当 `RESIN_AUTH_VERSION=V1` 时，认证身份格式为：`Platform.Account:RESIN_PROXY_TOKEN`。
 
-> 如需 V0 旧格式，可设置 `RESIN_AUTH_VERSION=LEGACY_V0`，继续使用 `RESIN_PROXY_TOKEN:Platform:Account`。  
+> 如需 V0 旧格式，可设置 `RESIN_AUTH_VERSION=LEGACY_V0`，继续使用 `RESIN_PROXY_TOKEN:Platform:Account`。
 
 直接将身份信息写入 Proxy Auth（代理用户名）中：
 
@@ -175,6 +177,33 @@ curl http://127.0.0.1:2260/my-token/MyPlatform/https/api.ipify.org
 curl -x http://127.0.0.1:2260 \
   -U "Default.user_tom:my-token" \
   https://api.ipify.org
+```
+
+#### 方式 1.5：SOCKS5 代理接入
+
+Resin 支持通过独立端口提供 SOCKS5 代理。设置 `RESIN_SOCKS5_PORT`（如 `1080`）即可启用。
+
+SOCKS5 使用与正向代理相同的身份格式，映射到 SOCKS5 用户名/密码：
+
+| AUTH_VERSION | 用户名 | 密码 |
+| :--- | :--- | :--- |
+| `V1`（推荐） | `平台名.账号名` | `RESIN_PROXY_TOKEN` |
+| `LEGACY_V0` | `RESIN_PROXY_TOKEN` | `平台名:账号名` |
+| Token 为空 | （可选身份标识） | （忽略） |
+
+使用 curl 测试（V1 格式）：
+
+```bash
+curl -x socks5://Default.user_tom:my-token@127.0.0.1:1080 https://api.ipify.org
+```
+
+Telegram SOCKS5 配置示例：
+
+```
+服务器：   <你的服务器IP>
+端口：     1080
+用户名：   Default.telegram
+密码：     my-token
 ```
 
 #### 方式二：反向代理接入（URL 携带 Account，适合简单使用/手动调试）
@@ -267,6 +296,7 @@ RESIN_CACHE_DIR=./data/cache \
 RESIN_LOG_DIR=./data/log \
 RESIN_LISTEN_ADDRESS=0.0.0.0 \
 RESIN_PORT=2260 \
+# RESIN_SOCKS5_PORT=1080 \
 ./resin
 ```
 </details>
@@ -297,6 +327,7 @@ RESIN_CACHE_DIR=./data/cache \
 RESIN_LOG_DIR=./data/log \
 RESIN_LISTEN_ADDRESS=127.0.0.1 \
 RESIN_PORT=2260 \
+# RESIN_SOCKS5_PORT=1080 \
 ./resin
 ```
 </details>
@@ -311,6 +342,8 @@ RESIN_PORT=2260 \
   - **A**: 请设置为 `LEGACY_V0` 或 `V1`。新用户设置成 V1 即可。有旧数据的老用户可以参考[迁移指南](doc/v1.0.0-migration-guide.zh-CN.md)。
 - **Q: 使用反向代理 WebSocket 协议（如 ws/wss）怎么写路径？**
   - **A**: 目标无论是不是 ws/wss，URL 路径里的协议字段**依然只能写 `http` 或 `https`**（不能写 ws/wss）。Resin 会自动探测并完成 WebSocket 协议升级（Upgrade）。
+- **Q: 如何启用 SOCKS5 代理？**
+  - **A**: 设置 `RESIN_SOCKS5_PORT` 为非零端口（如 `1080`）。SOCKS5 端口不能与 `RESIN_PORT` 相同。使用 Docker 时需映射该端口。
 
 ---
 
