@@ -77,7 +77,7 @@
 # docker-compose.yml
 services:
   resin:
-    image: ghcr.io/resinat/resin:latest
+    image: ${RESIN_IMAGE:-ghcr.io/wchiways/resin_socks:latest}
     container_name: resin
     restart: unless-stopped
     environment:
@@ -96,6 +96,12 @@ services:
       - ./data/log:/var/log/resin
 ```
 运行 `docker compose up -d` 启动服务。
+
+你也可以通过环境变量覆盖镜像：
+
+```bash
+RESIN_IMAGE=ghcr.io/wchiways/resin_socks:latest docker compose up -d
+```
 
 *(如果你不想使用 Docker，请跳转文末查看 [其他部署方式](#其他部署方式))*
 

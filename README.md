@@ -77,7 +77,7 @@ Docker Compose is the recommended quick-start path:
 # docker-compose.yml
 services:
   resin:
-    image: ghcr.io/resinat/resin:latest
+    image: ${RESIN_IMAGE:-ghcr.io/wchiways/resin_socks:latest}
     container_name: resin
     restart: unless-stopped
     environment:
@@ -97,6 +97,12 @@ services:
 ```
 
 Run `docker compose up -d` to start the service.
+
+You can override the image via environment variable:
+
+```bash
+RESIN_IMAGE=ghcr.io/wchiways/resin_socks:latest docker compose up -d
+```
 
 *(If you don't want Docker, jump to [Other Deployment Options](#other-deployment-options).)*
 
