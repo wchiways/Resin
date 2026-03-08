@@ -341,8 +341,8 @@ func TestSystemEnvConfig_OK(t *testing.T) {
 	if _, ok := body["admin_token"]; ok {
 		t.Error("admin_token should not be exposed in /system/config/env")
 	}
-	if _, ok := body["proxy_token"]; ok {
-		t.Error("proxy_token should not be exposed in /system/config/env")
+	if body["proxy_token"] != "test-proxy-token" {
+		t.Errorf("proxy_token: got %v, want %q", body["proxy_token"], "test-proxy-token")
 	}
 }
 

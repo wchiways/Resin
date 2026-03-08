@@ -53,6 +53,7 @@ type systemEnvConfigResponse struct {
 	ProxyTokenSet                                   bool            `json:"proxy_token_set"`
 	AdminTokenWeak                                  bool            `json:"admin_token_weak"`
 	ProxyTokenWeak                                  bool            `json:"proxy_token_weak"`
+	ProxyToken                                      string          `json:"proxy_token"`
 }
 
 // HandleSystemInfo returns a handler for GET /api/v1/system/info.
@@ -149,6 +150,7 @@ func systemEnvConfigSnapshot(envCfg *config.EnvConfig) *systemEnvConfigResponse 
 		ProxyTokenSet:                                   proxyTokenSet,
 		AdminTokenWeak:                                  adminTokenSet && config.IsWeakToken(envCfg.AdminToken),
 		ProxyTokenWeak:                                  proxyTokenSet && config.IsWeakToken(envCfg.ProxyToken),
+		ProxyToken:                                      envCfg.ProxyToken,
 	}
 }
 

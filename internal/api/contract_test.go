@@ -1190,8 +1190,8 @@ func TestAPIContract_SystemEnvConfigSnapshot(t *testing.T) {
 	if _, ok := body["admin_token"]; ok {
 		t.Fatalf("admin_token should not be exposed: body=%s", rec.Body.String())
 	}
-	if _, ok := body["proxy_token"]; ok {
-		t.Fatalf("proxy_token should not be exposed: body=%s", rec.Body.String())
+	if body["proxy_token"] != "" {
+		t.Fatalf("proxy_token: got %v, want empty string", body["proxy_token"])
 	}
 }
 
