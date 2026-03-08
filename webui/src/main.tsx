@@ -12,6 +12,7 @@ import { AppProviders } from "./app/providers";
 import { AppRoutes } from "./app/routes";
 import "./i18n";
 import "./styles/theme.css";
+import "./styles/tailwind.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

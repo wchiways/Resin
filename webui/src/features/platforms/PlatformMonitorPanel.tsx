@@ -6,9 +6,10 @@ import { Badge } from "../../components/ui/Badge";
 import { Card } from "../../components/ui/Card";
 import { Select } from "../../components/ui/Select";
 import { useI18n } from "../../i18n";
-import { getCurrentLocale, isEnglishLocale } from "../../i18n/locale";
+import { getCurrentLocale, isEnglishLocale, type AppLocale } from "../../i18n/locale";
 import { apiRequest } from "../../lib/api-client";
 import { formatApiErrorMessage } from "../../lib/error-message";
+import { kpiIconClass } from "../../lib/kpi-icon-class";
 import type {
   HistoryAccessLatencyResponse,
   HistoryLeaseLifetimeResponse,
@@ -139,7 +140,7 @@ function formatLatency(value: number): string {
   return `${Math.round(value)}ms`;
 }
 
-function formatClock(iso: string): string {
+function formatClock(iso: string, locale: AppLocale = getCurrentLocale()): string {
   if (!iso) {
     return "--";
   }
@@ -147,7 +148,7 @@ function formatClock(iso: string): string {
   if (Number.isNaN(date.getTime())) {
     return "--";
   }
-  return new Intl.DateTimeFormat(numberLocale(), {
+  return new Intl.DateTimeFormat(isEnglishLocale(locale) ? "en-US" : "zh-CN", {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
@@ -424,9 +425,37 @@ async function fetchPlatformSnapshotNodeLatency(platformId: string): Promise<Sna
   return normalizeNodeLatencySnapshot(data);
 }
 
+type TrendTooltipPayloadEntry = {
+  dataKey?: string | number;
+  value?: number | string;
+};
+
+type RequestQualityTooltipPayloadEntry = {
+  dataKey?: string | number;
+  value?: number | string;
+  color?: string;
+  name?: string;
+};
+
+type HistogramTooltipPayloadEntry = {
+  value?: number | string;
+  payload?: HistogramBarPoint;
+};
+
+type RequestQualityTooltipContentProps = {
+  active?: boolean;
+  payload?: RequestQualityTooltipPayloadEntry[];
+  label?: string;
+};
+
+type HistogramTooltipContentProps = {
+  active?: boolean;
+  payload?: HistogramTooltipPayloadEntry[];
+};
+
 type TrendTooltipContentProps = {
   active?: boolean;
-  payload?: any[];
+  payload?: TrendTooltipPayloadEntry[];
   label?: string;
   lines: TrendLineDefinition[];
   valueFormatter: (value: number) => string;
@@ -461,7 +490,7 @@ function TrendTooltipContent({ active, payload, label, lines, valueFormatter }: 
   );
 }
 
-function RequestQualityTooltipContent({ active, payload, label }: any) {
+function RequestQualityTooltipContent({ active, payload, label }: RequestQualityTooltipContentProps) {
   if (!active || !payload?.length) {
     return null;
   }
@@ -470,7 +499,7 @@ function RequestQualityTooltipContent({ active, payload, label }: any) {
     <div className="trend-tooltip">
       <p className="trend-tooltip-time">{label ?? "--"}</p>
       <div className="trend-tooltip-list">
-        {payload.map((entry: any) => {
+        {payload.map((entry) => {
           const isRate = entry.dataKey === "success_rate";
           const valueStr = isRate ? `${Number(entry.value).toFixed(1)}%` : formatCount(Number(entry.value));
 
@@ -489,7 +518,7 @@ function RequestQualityTooltipContent({ active, payload, label }: any) {
   );
 }
 
-function HistogramTooltipContent({ active, payload }: any) {
+function HistogramTooltipContent({ active, payload }: HistogramTooltipContentProps) {
   const { t } = useI18n();
 
   if (!active || !payload?.length) {
@@ -758,8 +787,12 @@ function LatencyHistogram({ buckets, emptyText }: LatencyHistogramProps) {
   );
 }
 
+function monitorKpiIconClass(kind: "lease" | "shield" | "gauge" | "waves") {
+  return kpiIconClass(kind);
+}
+
 export function PlatformMonitorPanel({ platform }: { platform: Platform }) {
-  const { locale, t } = useI18n();
+  const { t, locale } = useI18n();
   const [rangeKey, setRangeKey] = useState<RangeKey>("6h");
 
   const realtimeQuery = useQuery({
@@ -864,40 +897,41 @@ export function PlatformMonitorPanel({ platform }: { platform: Platform }) {
 
   const leaseTrendData = useMemo(() => {
     return downsampleArray(sortedRealtimeItems, MAX_TREND_POINTS).map((item) => ({
-      label: formatClock(item.ts),
+      label: formatClock(item.ts, locale),
       active_leases: item.active_leases,
     }));
-  }, [sortedRealtimeItems, locale]);
+  }, [locale, sortedRealtimeItems]);
 
   const requestTrendData = useMemo(() => {
     return downsampleArray(sortedRequestsItems, MAX_TREND_POINTS).map((item) => ({
-      label: formatClock(item.bucket_start),
+      label: formatClock(item.bucket_start, locale),
       total_requests: item.total_requests,
       success_rate: item.success_rate * 100,
     }));
-  }, [sortedRequestsItems, locale]);
+  }, [locale, sortedRequestsItems]);
 
   const leaseLifetimeTrendData = useMemo(() => {
     return downsampleArray(sortedLeaseLifetimeItems, MAX_TREND_POINTS).map((item) => ({
-      label: formatClock(item.bucket_start),
+      label: formatClock(item.bucket_start, locale),
       p1_ms: item.p1_ms,
       p5_ms: item.p5_ms,
       p50_ms: item.p50_ms,
     }));
-  }, [sortedLeaseLifetimeItems, locale]);
+  }, [locale, sortedLeaseLifetimeItems]);
 
   return (
     <section className="platform-drawer-section platform-monitor-section">
-      <div className="platform-drawer-section-head platform-monitor-head">
+      <div className="platform-drawer-section-head flex flex-row items-end justify-between gap-3 max-resin-sm:flex-col max-resin-sm:items-stretch">
         <div>
           <h4>{t("平台监控")}</h4>
           <p>{t("查看当前平台的租约、请求成功率、延迟和节点情况。")}</p>
         </div>
 
-        <label className="platform-monitor-range" htmlFor="platform-monitor-range">
-          <span>{t("时间范围")}</span>
+        <label className="inline-flex items-center gap-2.5 max-resin-sm:w-full" htmlFor="platform-monitor-range">
+          <span className="whitespace-nowrap text-xs text-muted-foreground">{t("时间范围")}</span>
           <Select
             id="platform-monitor-range"
+            className="min-w-32 rounded-[9px] py-1.5 max-resin-sm:w-full max-resin-sm:min-w-0"
             value={rangeKey}
             onChange={(event) => setRangeKey(event.target.value as RangeKey)}
           >
@@ -917,59 +951,59 @@ export function PlatformMonitorPanel({ platform }: { platform: Platform }) {
         </div>
       ) : null}
 
-      <div className="platform-monitor-kpi-grid">
-        <Card className="platform-monitor-kpi-card">
-          <div className="dashboard-kpi-icon lease">
+      <div className="grid grid-cols-2 gap-2.5 max-resin-lg:grid-cols-1">
+        <Card className="m-0 grid min-h-[88px] grid-cols-[auto_1fr] items-center gap-2.5 p-3">
+          <div className={monitorKpiIconClass("lease")}>
             <Layers size={16} />
           </div>
           <div>
-            <p className="platform-monitor-kpi-label">{t("活跃租约")}</p>
-            <p className="platform-monitor-kpi-value">{formatCount(latestActiveLeases)}</p>
-            <p className="platform-monitor-kpi-sub">{t("当前实时值")}</p>
+            <p className="m-0 text-xs text-muted-foreground">{t("活跃租约")}</p>
+            <p className="mt-1 text-[22px] font-bold leading-[1.1] text-[#143f77]">{formatCount(latestActiveLeases)}</p>
+            <p className="mt-1 text-xs text-[#52637c]">{t("当前实时值")}</p>
           </div>
         </Card>
 
-        <Card className="platform-monitor-kpi-card">
-          <div className="dashboard-kpi-icon shield">
+        <Card className="m-0 grid min-h-[88px] grid-cols-[auto_1fr] items-center gap-2.5 p-3">
+          <div className={monitorKpiIconClass("shield")}>
             <ShieldCheck size={16} />
           </div>
           <div>
-            <p className="platform-monitor-kpi-label">{t("请求成功率")}</p>
-            <p className="platform-monitor-kpi-value">{formatPercent(requestSuccessRatio)}</p>
-            <p className="platform-monitor-kpi-sub">
+            <p className="m-0 text-xs text-muted-foreground">{t("请求成功率")}</p>
+            <p className="mt-1 text-[22px] font-bold leading-[1.1] text-[#143f77]">{formatPercent(requestSuccessRatio)}</p>
+            <p className="mt-1 text-xs text-[#52637c]">
               {t("成功")} {formatCount(successRequests)} / {t("总计")} {formatCount(totalRequests)}
             </p>
           </div>
         </Card>
 
-        <Card className="platform-monitor-kpi-card">
-          <div className="dashboard-kpi-icon gauge">
+        <Card className="m-0 grid min-h-[88px] grid-cols-[auto_1fr] items-center gap-2.5 p-3">
+          <div className={monitorKpiIconClass("gauge")}>
             <Waypoints size={16} />
           </div>
           <div>
-            <p className="platform-monitor-kpi-label">{t("可路由节点")}</p>
-            <p className="platform-monitor-kpi-value">{formatCount(snapshotNodePool?.routable_node_count ?? 0)}</p>
-            <p className="platform-monitor-kpi-sub">{t("出口 IP")} {formatCount(snapshotNodePool?.egress_ip_count ?? 0)}</p>
+            <p className="m-0 text-xs text-muted-foreground">{t("可路由节点")}</p>
+            <p className="mt-1 text-[22px] font-bold leading-[1.1] text-[#143f77]">{formatCount(snapshotNodePool?.routable_node_count ?? 0)}</p>
+            <p className="mt-1 text-xs text-[#52637c]">{t("出口 IP")} {formatCount(snapshotNodePool?.egress_ip_count ?? 0)}</p>
           </div>
         </Card>
 
-        <Card className="platform-monitor-kpi-card">
-          <div className="dashboard-kpi-icon waves">
+        <Card className="m-0 grid min-h-[88px] grid-cols-[auto_1fr] items-center gap-2.5 p-3">
+          <div className={monitorKpiIconClass("waves")}>
             <Clock3 size={16} />
           </div>
           <div>
-            <p className="platform-monitor-kpi-label">{t("租约 P50 存活时长")}</p>
-            <p className="platform-monitor-kpi-value">{formatLatency(latestP50LeaseMs)}</p>
-            <p className="platform-monitor-kpi-sub">{t("历史租约时长统计")}</p>
+            <p className="m-0 text-xs text-muted-foreground">{t("租约 P50 存活时长")}</p>
+            <p className="mt-1 text-[22px] font-bold leading-[1.1] text-[#143f77]">{formatLatency(latestP50LeaseMs)}</p>
+            <p className="mt-1 text-xs text-[#52637c]">{t("历史租约时长统计")}</p>
           </div>
         </Card>
       </div>
 
-      <div className="platform-monitor-grid">
-        <Card className="dashboard-panel">
-          <div className="dashboard-panel-header">
-            <h3>{t("活跃租约趋势")}</h3>
-            <p>{t("平台实时租约数量")}</p>
+      <div className="grid grid-cols-2 gap-2.5 max-resin-lg:grid-cols-1">
+        <Card className="m-0 flex flex-col gap-2.5 p-3">
+          <div>
+            <h3 className="m-0 text-base">{t("活跃租约趋势")}</h3>
+            <p className="mt-[3px] text-xs text-muted-foreground">{t("平台实时租约数量")}</p>
           </div>
           <TrendLineChart
             data={leaseTrendData}
@@ -979,10 +1013,10 @@ export function PlatformMonitorPanel({ platform }: { platform: Platform }) {
           />
         </Card>
 
-        <Card className="dashboard-panel">
-          <div className="dashboard-panel-header">
-            <h3>{t("请求质量")}</h3>
-            <p>{t("请求总量 + 成功率")}</p>
+        <Card className="m-0 flex flex-col gap-2.5 p-3">
+          <div>
+            <h3 className="m-0 text-base">{t("请求质量")}</h3>
+            <p className="mt-[3px] text-xs text-muted-foreground">{t("请求总量 + 成功率")}</p>
           </div>
           <RequestQualityChart data={requestTrendData} emptyText={t("暂无请求统计数据")} />
           <div className="dashboard-summary-inline">
@@ -991,10 +1025,10 @@ export function PlatformMonitorPanel({ platform }: { platform: Platform }) {
           </div>
         </Card>
 
-        <Card className="dashboard-panel">
-          <div className="dashboard-panel-header">
-            <h3>{t("租约存活分位趋势")}</h3>
-            <p>P1 / P5 / P50 (ms)</p>
+        <Card className="m-0 flex flex-col gap-2.5 p-3">
+          <div>
+            <h3 className="m-0 text-base">{t("租约存活分位趋势")}</h3>
+            <p className="mt-[3px] text-xs text-muted-foreground">P1 / P5 / P50 (ms)</p>
           </div>
           <TrendLineChart
             data={leaseLifetimeTrendData}
@@ -1008,49 +1042,49 @@ export function PlatformMonitorPanel({ platform }: { platform: Platform }) {
           />
         </Card>
 
-        <Card className="dashboard-panel">
-          <div className="dashboard-panel-header">
-            <h3>{t("平台节点快照")}</h3>
-            <p>{t("当前平台节点池与延迟样本")}</p>
+        <Card className="m-0 flex flex-col gap-2.5 p-3">
+          <div>
+            <h3 className="m-0 text-base">{t("平台节点快照")}</h3>
+            <p className="mt-[3px] text-xs text-muted-foreground">{t("当前平台节点池与延迟样本")}</p>
           </div>
 
-          <div className="platform-monitor-snapshot-list">
-            <div>
-              <span>{t("可路由节点数")}</span>
-              <p>{formatCount(snapshotNodePool?.routable_node_count ?? 0)}</p>
+          <div className="mt-2 grid grid-cols-2 gap-2 max-resin-lg:grid-cols-1">
+            <div className="rounded-[11px] border border-[rgba(37,72,120,0.14)] bg-[rgba(255,255,255,0.82)] px-2.5 py-[9px]">
+              <span className="text-[11px] text-muted-foreground">{t("可路由节点数")}</span>
+              <p className="mt-[3px] text-[13px] font-bold text-[#173f74]">{formatCount(snapshotNodePool?.routable_node_count ?? 0)}</p>
             </div>
-            <div>
-              <span>{t("出口 IP 数")}</span>
-              <p>{formatCount(snapshotNodePool?.egress_ip_count ?? 0)}</p>
+            <div className="rounded-[11px] border border-[rgba(37,72,120,0.14)] bg-[rgba(255,255,255,0.82)] px-2.5 py-[9px]">
+              <span className="text-[11px] text-muted-foreground">{t("出口 IP 数")}</span>
+              <p className="mt-[3px] text-[13px] font-bold text-[#173f74]">{formatCount(snapshotNodePool?.egress_ip_count ?? 0)}</p>
             </div>
-            <div>
-              <span>{t("延迟样本数")}</span>
-              <p>{formatCount(snapshotLatency?.sample_count ?? 0)}</p>
+            <div className="rounded-[11px] border border-[rgba(37,72,120,0.14)] bg-[rgba(255,255,255,0.82)] px-2.5 py-[9px]">
+              <span className="text-[11px] text-muted-foreground">{t("延迟样本数")}</span>
+              <p className="mt-[3px] text-[13px] font-bold text-[#173f74]">{formatCount(snapshotLatency?.sample_count ?? 0)}</p>
             </div>
-            <div>
-              <span>{t("快照更新时间")}</span>
-              <p>{snapshotLatency?.generated_at ? formatClock(snapshotLatency.generated_at) : "--"}</p>
+            <div className="rounded-[11px] border border-[rgba(37,72,120,0.14)] bg-[rgba(255,255,255,0.82)] px-2.5 py-[9px]">
+              <span className="text-[11px] text-muted-foreground">{t("快照更新时间")}</span>
+              <p className="mt-[3px] text-[13px] font-bold text-[#173f74]">{snapshotLatency?.generated_at ? formatClock(snapshotLatency.generated_at, locale) : "--"}</p>
             </div>
           </div>
         </Card>
 
-        <Card className="dashboard-panel platform-monitor-span-2">
-          <div className="dashboard-panel-header">
-            <h3>{t("访问延迟分布（历史最新桶）")}</h3>
-            <p>{t("历史访问延迟分布")}</p>
+        <Card className="m-0 col-span-2 flex flex-col gap-2.5 p-3 max-resin-lg:col-span-1">
+          <div>
+            <h3 className="m-0 text-base">{t("访问延迟分布（历史最新桶）")}</h3>
+            <p className="mt-[3px] text-xs text-muted-foreground">{t("历史访问延迟分布")}</p>
           </div>
           <LatencyHistogram buckets={latestAccessLatency?.buckets ?? []} emptyText={t("暂无访问延迟分布数据")} />
           <div className="dashboard-summary-inline">
-            <span>{t("时间")} {latestAccessLatency ? formatClock(latestAccessLatency.bucket_end) : "--"}</span>
+            <span>{t("时间")} {latestAccessLatency ? formatClock(latestAccessLatency.bucket_end, locale) : "--"}</span>
             <span>{t("样本")} {formatCount(latestAccessLatency?.sample_count ?? 0)}</span>
             <span>{t("溢出")} {formatCount(latestAccessLatency?.overflow_count ?? 0)}</span>
           </div>
         </Card>
 
-        <Card className="dashboard-panel platform-monitor-span-2">
-          <div className="dashboard-panel-header">
-            <h3>{t("节点延迟分布（实时快照）")}</h3>
-            <p>{t("实时节点延迟分布快照")}</p>
+        <Card className="m-0 col-span-2 flex flex-col gap-2.5 p-3 max-resin-lg:col-span-1">
+          <div>
+            <h3 className="m-0 text-base">{t("节点延迟分布（实时快照）")}</h3>
+            <p className="mt-[3px] text-xs text-muted-foreground">{t("实时节点延迟分布快照")}</p>
           </div>
           <LatencyHistogram buckets={snapshotLatency?.buckets ?? []} emptyText={t("暂无节点延迟快照数据")} />
           <div className="dashboard-summary-inline">

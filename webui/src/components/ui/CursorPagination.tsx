@@ -1,6 +1,13 @@
+import { cva } from "class-variance-authority";
 import { Button } from "./Button";
 import { Select } from "./Select";
 import { useI18n } from "../../i18n";
+import { cn } from "../../lib/cn";
+
+const nodesPaginationVariants = cva("nodes-pagination");
+const nodesPaginationMetaVariants = cva("nodes-pagination-meta");
+const nodesPaginationControlsVariants = cva("nodes-pagination-controls");
+const nodesPageSizeVariants = cva("nodes-page-size");
 
 type CursorPaginationProps = {
     pageIndex: number;
@@ -26,14 +33,14 @@ export function CursorPagination({
     const { t } = useI18n();
 
     return (
-        <div className="nodes-pagination">
-            <p className="nodes-pagination-meta">
+        <div className={nodesPaginationVariants()}>
+            <p className={nodesPaginationMetaVariants()}>
                 {hasMore
                     ? t("第 {{page}} 页 · 有更多数据", { page: pageIndex + 1 })
                     : t("第 {{page}} 页 · 无更多数据", { page: pageIndex + 1 })}
             </p>
-            <div className="nodes-pagination-controls">
-                <label className="nodes-page-size">
+            <div className={nodesPaginationControlsVariants()}>
+                <label className={nodesPageSizeVariants()}>
                     <span>{t("每页")}</span>
                     <Select value={String(pageSize)} onChange={(event) => onPageSizeChange(Number(event.target.value))} disabled={disabled}>
                         {pageSizeOptions.map((size) => (
@@ -44,10 +51,10 @@ export function CursorPagination({
                     </Select>
                 </label>
 
-                <Button variant="secondary" size="sm" onClick={onPrev} disabled={disabled || pageIndex <= 0}>
+                <Button className={cn("h-9 px-2.5")} variant="secondary" size="sm" onClick={onPrev} disabled={disabled || pageIndex <= 0}>
                     {t("上一页")}
                 </Button>
-                <Button variant="secondary" size="sm" onClick={onNext} disabled={disabled || !hasMore}>
+                <Button className={cn("h-9 px-2.5")} variant="secondary" size="sm" onClick={onNext} disabled={disabled || !hasMore}>
                     {t("下一页")}
                 </Button>
             </div>

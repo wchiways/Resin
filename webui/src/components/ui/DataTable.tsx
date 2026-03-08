@@ -1,4 +1,14 @@
+import { cva } from "class-variance-authority";
 import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
+import type { KeyboardEvent } from "react";
+import { cn } from "../../lib/cn";
+
+const dataTableWrapVariants = cva("data-table-wrap");
+const dataTableVariants = cva("data-table");
+
+function isKeyboardRowActivation(event: KeyboardEvent<HTMLTableRowElement>): boolean {
+    return event.key === "Enter" || event.key === " ";
+}
 
 type DataTableProps<T> = {
     data: T[];
@@ -30,8 +40,8 @@ export function DataTable<T>({
     });
 
     return (
-        <div className={`data-table-wrap ${wrapClassName ?? ""}`}>
-            <table className={`data-table ${className ?? ""}`}>
+        <div className={cn(dataTableWrapVariants(), wrapClassName)}>
+            <table className={cn(dataTableVariants(), className)}>
                 <thead>
                     {table.getHeaderGroups().map((headerGroup) => (
                         <tr key={headerGroup.id}>
@@ -46,11 +56,26 @@ export function DataTable<T>({
                 <tbody>
                     {table.getRowModel().rows.map((row) => {
                         const isSelected = selectedRowId != null && row.id === selectedRowId;
+                        const isClickable = onRowClick != null;
                         return (
                             <tr
                                 key={row.id}
-                                className={isSelected ? "data-table-row-selected" : onRowClick ? "clickable-row" : undefined}
-                                onClick={onRowClick ? () => onRowClick(row.original) : undefined}
+                                className={cn(
+                                    isClickable && "data-table-row-clickable",
+                                    isSelected && "data-table-row-selected",
+                                )}
+                                onClick={isClickable ? () => onRowClick(row.original) : undefined}
+                                tabIndex={isClickable ? 0 : undefined}
+                                onKeyDown={isClickable ? (event) => {
+                                    if (event.target !== event.currentTarget) {
+                                        return;
+                                    }
+                                    if (!isKeyboardRowActivation(event)) {
+                                        return;
+                                    }
+                                    event.preventDefault();
+                                    onRowClick(row.original);
+                                } : undefined}
                             >
                                 {row.getVisibleCells().map((cell) => (
                                     <td key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>

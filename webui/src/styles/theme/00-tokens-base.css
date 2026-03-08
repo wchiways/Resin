@@ -1,0 +1,104 @@
+:root {
+  --bg: #f7fbff;
+  --bg-soft: #fefefe;
+  --surface: rgba(255, 255, 255, 0.86);
+  --surface-strong: #ffffff;
+  --text: #1f2735;
+  --text-muted: #647086;
+  --border: rgba(37, 72, 120, 0.14);
+  --primary: #1470ff;
+  --primary-strong: #0752ce;
+  --primary-soft: rgba(20, 112, 255, 0.14);
+  --success: #048867;
+  --danger: #c33a2f;
+  --warning: #af7b00;
+  --shadow: 0 18px 40px rgba(42, 86, 149, 0.11);
+  --radius: 18px;
+
+  /* Tailwind/shadcn token bridge (Stage 2) */
+  --background: var(--bg);
+  --foreground: var(--text);
+  --card: var(--surface-strong);
+  --card-foreground: var(--text);
+  --muted: var(--bg-soft);
+  --muted-foreground: var(--text-muted);
+  --popover: var(--surface-strong);
+  --popover-foreground: var(--text);
+  --primary-foreground: #ffffff;
+  --secondary: var(--bg-soft);
+  --secondary-foreground: var(--text);
+  --accent: var(--primary-soft);
+  --accent-foreground: var(--primary-strong);
+  --destructive: var(--danger);
+  --destructive-foreground: #ffffff;
+  --ring: var(--primary);
+  --input: var(--border);
+
+  --bp-lg: 1120px;
+  --bp-sm: 760px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family: "Manrope", "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(circle at 16% 22%, rgba(65, 162, 255, 0.2), transparent 36%),
+    radial-gradient(circle at 85% 0%, rgba(255, 173, 85, 0.2), transparent 42%),
+    linear-gradient(180deg, #fcfeff, #f2f7ff 60%, #eef4ff);
+  line-height: 1.45;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: "Sora", "PingFang SC", "Microsoft YaHei", sans-serif;
+  margin: 0;
+}
+
+p {
+  margin: 0;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.w-full {
+  width: 100%;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}

@@ -454,7 +454,7 @@ export function SystemConfigPage() {
         </Card>
       ) : (
         <div className="syscfg-layout">
-          <div className="syscfg-main" style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+          <div className="syscfg-main">
             <Card className="syscfg-form-card platform-directory-card">
               <div className="detail-header">
                 <div>
@@ -471,8 +471,8 @@ export function SystemConfigPage() {
                 <h4>{t("基础与健康检查")}</h4>
                 <div className="form-grid">
                   <div className="field-group">
-                    <div style={{ display: "flex", alignItems: "center" }}>
-                      <label className="field-label" htmlFor="sys-user-agent" style={{ margin: 0 }}>
+                    <div className="field-head">
+                      <label className="field-label field-label-reset" htmlFor="sys-user-agent">
                         User-Agent
                       </label>
                       {renderRestoreButton("user_agent")}
@@ -485,8 +485,8 @@ export function SystemConfigPage() {
                   </div>
 
                   <div className="field-group">
-                    <div style={{ display: "flex", alignItems: "center" }}>
-                      <label className="field-label" htmlFor="sys-max-fail" style={{ margin: 0 }}>
+                    <div className="field-head">
+                      <label className="field-label field-label-reset" htmlFor="sys-max-fail">
                         {t("最大连续失败次数")}
                       </label>
                       {renderRestoreButton("max_consecutive_failures")}
@@ -504,33 +504,35 @@ export function SystemConfigPage() {
 
               <section className="syscfg-section">
                 <h4>{t("请求日志")}</h4>
-                <div className="syscfg-checkbox-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--surface-sunken, rgba(0,0,0,0.02))", padding: "12px 16px", borderRadius: "8px", border: "1px solid var(--border)" }}>
-                    <div style={{ display: "flex", alignItems: "center" }}>
-                      <span className="field-label" style={{ margin: 0, fontWeight: 500 }}>{t("启用请求日志")}</span>
+                <div className="syscfg-checkbox-grid syscfg-checkbox-grid-wide">
+                  <div className="syscfg-switch-card">
+                    <div className="syscfg-switch-label-group">
+                      <label className="field-label field-label-reset syscfg-switch-label" htmlFor="sys-request-log-enabled">{t("启用请求日志")}</label>
                       {renderRestoreButton("request_log_enabled")}
                     </div>
                     <Switch
+                      id="sys-request-log-enabled"
                       checked={form.request_log_enabled}
                       onChange={(event) => setFormField("request_log_enabled", event.target.checked)}
                     />
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--surface-sunken, rgba(0,0,0,0.02))", padding: "12px 16px", borderRadius: "8px", border: "1px solid var(--border)" }}>
-                    <div style={{ display: "flex", alignItems: "center" }}>
-                      <span className="field-label" style={{ margin: 0, fontWeight: 500 }}>{t("记录详细反代日志")}</span>
+                  <div className="syscfg-switch-card">
+                    <div className="syscfg-switch-label-group">
+                      <label className="field-label field-label-reset syscfg-switch-label" htmlFor="sys-reverse-proxy-log-detail-enabled">{t("记录详细反代日志")}</label>
                       {renderRestoreButton("reverse_proxy_log_detail_enabled")}
                     </div>
                     <Switch
+                      id="sys-reverse-proxy-log-detail-enabled"
                       checked={form.reverse_proxy_log_detail_enabled}
                       onChange={(event) => setFormField("reverse_proxy_log_detail_enabled", event.target.checked)}
                     />
                   </div>
                 </div>
 
-                <div className="form-grid" style={{ marginTop: "16px" }}>
+                <div className="form-grid syscfg-form-grid-spaced">
                   <div className="field-group">
-                    <div style={{ display: "flex", alignItems: "center" }}>
-                      <label className="field-label" htmlFor="sys-req-h-max" style={{ margin: 0 }}>
+                    <div className="field-head">
+                      <label className="field-label field-label-reset" htmlFor="sys-req-h-max">
                         {t("请求头最大字节数")}
                       </label>
                       {renderRestoreButton("reverse_proxy_log_req_headers_max_bytes")}
@@ -545,8 +547,8 @@ export function SystemConfigPage() {
                   </div>
 
                   <div className="field-group">
-                    <div style={{ display: "flex", alignItems: "center" }}>
-                      <label className="field-label" htmlFor="sys-req-b-max" style={{ margin: 0 }}>
+                    <div className="field-head">
+                      <label className="field-label field-label-reset" htmlFor="sys-req-b-max">
                         {t("请求体最大字节数")}
                       </label>
                       {renderRestoreButton("reverse_proxy_log_req_body_max_bytes")}
@@ -561,8 +563,8 @@ export function SystemConfigPage() {
                   </div>
 
                   <div className="field-group">
-                    <div style={{ display: "flex", alignItems: "center" }}>
-                      <label className="field-label" htmlFor="sys-resp-h-max" style={{ margin: 0 }}>
+                    <div className="field-head">
+                      <label className="field-label field-label-reset" htmlFor="sys-resp-h-max">
                         {t("响应头最大字节数")}
                       </label>
                       {renderRestoreButton("reverse_proxy_log_resp_headers_max_bytes")}
@@ -577,8 +579,8 @@ export function SystemConfigPage() {
                   </div>
 
                   <div className="field-group">
-                    <div style={{ display: "flex", alignItems: "center" }}>
-                      <label className="field-label" htmlFor="sys-resp-b-max" style={{ margin: 0 }}>
+                    <div className="field-head">
+                      <label className="field-label field-label-reset" htmlFor="sys-resp-b-max">
                         {t("响应体最大字节数")}
                       </label>
                       {renderRestoreButton("reverse_proxy_log_resp_body_max_bytes")}
@@ -598,8 +600,8 @@ export function SystemConfigPage() {
                 <h4>{t("探测与路由")}</h4>
                 <div className="form-grid">
                   <div className="field-group field-span-2">
-                    <div style={{ display: "flex", alignItems: "center" }}>
-                      <label className="field-label" htmlFor="sys-latency-url" style={{ margin: 0 }}>
+                    <div className="field-head">
+                      <label className="field-label field-label-reset" htmlFor="sys-latency-url">
                         {t("延迟测试目标 URL")}
                       </label>
                       {renderRestoreButton("latency_test_url")}
@@ -612,8 +614,8 @@ export function SystemConfigPage() {
                   </div>
 
                   <div className="field-group">
-                    <div style={{ display: "flex", alignItems: "center" }}>
-                      <label className="field-label" htmlFor="sys-max-latency-int" style={{ margin: 0 }}>
+                    <div className="field-head">
+                      <label className="field-label field-label-reset" htmlFor="sys-max-latency-int">
                         {t("节点延迟最大测试间隔")}
                       </label>
                       {renderRestoreButton("max_latency_test_interval")}
@@ -626,8 +628,8 @@ export function SystemConfigPage() {
                   </div>
 
                   <div className="field-group">
-                    <div style={{ display: "flex", alignItems: "center" }}>
-                      <label className="field-label" htmlFor="sys-max-auth-latency-int" style={{ margin: 0 }}>
+                    <div className="field-head">
+                      <label className="field-label field-label-reset" htmlFor="sys-max-auth-latency-int">
                         {t("权威域名最大测试间隔")}
                       </label>
                       {renderRestoreButton("max_authority_latency_test_interval")}
@@ -640,8 +642,8 @@ export function SystemConfigPage() {
                   </div>
 
                   <div className="field-group">
-                    <div style={{ display: "flex", alignItems: "center" }}>
-                      <label className="field-label" htmlFor="sys-max-egress-int" style={{ margin: 0 }}>
+                    <div className="field-head">
+                      <label className="field-label field-label-reset" htmlFor="sys-max-egress-int">
                         {t("出口 IP 更新检查间隔")}
                       </label>
                       {renderRestoreButton("max_egress_test_interval")}
@@ -654,8 +656,8 @@ export function SystemConfigPage() {
                   </div>
 
                   <div className="field-group">
-                    <div style={{ display: "flex", alignItems: "center" }}>
-                      <label className="field-label" htmlFor="sys-p2c-window" style={{ margin: 0 }}>
+                    <div className="field-head">
+                      <label className="field-label field-label-reset" htmlFor="sys-p2c-window">
                         {t("P2C 延迟衰减窗口")}
                       </label>
                       {renderRestoreButton("p2c_latency_window")}
@@ -668,8 +670,8 @@ export function SystemConfigPage() {
                   </div>
 
                   <div className="field-group">
-                    <div style={{ display: "flex", alignItems: "center" }}>
-                      <label className="field-label" htmlFor="sys-decay-window" style={{ margin: 0 }}>
+                    <div className="field-head">
+                      <label className="field-label field-label-reset" htmlFor="sys-decay-window">
                         {t("历史延迟衰减窗口")}
                       </label>
                       {renderRestoreButton("latency_decay_window")}
@@ -682,8 +684,8 @@ export function SystemConfigPage() {
                   </div>
 
                   <div className="field-group field-span-2">
-                    <div style={{ display: "flex", alignItems: "center" }}>
-                      <label className="field-label" htmlFor="sys-latency-authorities" style={{ margin: 0 }}>
+                    <div className="field-head">
+                      <label className="field-label field-label-reset" htmlFor="sys-latency-authorities">
                         {t("延迟测试权威域名列表")}
                       </label>
                       {renderRestoreButton("latency_authorities_raw")}
@@ -703,8 +705,8 @@ export function SystemConfigPage() {
                 <h4>{t("持久化策略")}</h4>
                 <div className="form-grid">
                   <div className="field-group">
-                    <div style={{ display: "flex", alignItems: "center" }}>
-                      <label className="field-label" htmlFor="sys-cache-flush-int" style={{ margin: 0 }}>
+                    <div className="field-head">
+                      <label className="field-label field-label-reset" htmlFor="sys-cache-flush-int">
                         {t("缓存异步刷盘间隔")}
                       </label>
                       {renderRestoreButton("cache_flush_interval")}
@@ -717,8 +719,8 @@ export function SystemConfigPage() {
                   </div>
 
                   <div className="field-group">
-                    <div style={{ display: "flex", alignItems: "center" }}>
-                      <label className="field-label" htmlFor="sys-cache-threshold" style={{ margin: 0 }}>
+                    <div className="field-head">
+                      <label className="field-label field-label-reset" htmlFor="sys-cache-threshold">
                         {t("缓存刷盘脏阈值")}
                       </label>
                       {renderRestoreButton("cache_flush_dirty_threshold")}
@@ -761,23 +763,23 @@ export function SystemConfigPage() {
                   <h4>{t("目录与端口")}</h4>
                   <div className="form-grid">
                     <div className="field-group">
-                      <label className="field-label" style={{ margin: 0 }}>{t("数据缓存目录")}</label>
+                      <label className="field-label field-label-reset">{t("数据缓存目录")}</label>
                       <Input readOnly disabled value={envBaseline.cache_dir} />
                     </div>
                     <div className="field-group">
-                      <label className="field-label" style={{ margin: 0 }}>{t("状态存储目录")}</label>
+                      <label className="field-label field-label-reset">{t("状态存储目录")}</label>
                       <Input readOnly disabled value={envBaseline.state_dir} />
                     </div>
                     <div className="field-group">
-                      <label className="field-label" style={{ margin: 0 }}>{t("日志保留目录")}</label>
+                      <label className="field-label field-label-reset">{t("日志保留目录")}</label>
                       <Input readOnly disabled value={envBaseline.log_dir} />
                     </div>
                     <div className="field-group">
-                      <label className="field-label" style={{ margin: 0 }}>{t("统一监听地址")}</label>
+                      <label className="field-label field-label-reset">{t("统一监听地址")}</label>
                       <Input readOnly disabled value={envBaseline.listen_address} />
                     </div>
                     <div className="field-group">
-                      <label className="field-label" style={{ margin: 0 }}>{t("统一服务端口")}</label>
+                      <label className="field-label field-label-reset">{t("统一服务端口")}</label>
                       <Input readOnly disabled value={String(envBaseline.resin_port)} />
                     </div>
                   </div>
@@ -787,39 +789,39 @@ export function SystemConfigPage() {
                   <h4>{t("全局限额与性能调优")}</h4>
                   <div className="form-grid">
                     <div className="field-group">
-                      <label className="field-label" style={{ margin: 0 }}>{t("控制面最大请求体")}</label>
+                      <label className="field-label field-label-reset">{t("控制面最大请求体")}</label>
                       <Input readOnly disabled value={String(envBaseline.api_max_body_bytes)} />
                     </div>
                     <div className="field-group">
-                      <label className="field-label" style={{ margin: 0 }}>{t("最大延迟表条目数")}</label>
+                      <label className="field-label field-label-reset">{t("最大延迟表条目数")}</label>
                       <Input readOnly disabled value={String(envBaseline.max_latency_table_entries)} />
                     </div>
                     <div className="field-group">
-                      <label className="field-label" style={{ margin: 0 }}>{t("节点拨测并发数")}</label>
+                      <label className="field-label field-label-reset">{t("节点拨测并发数")}</label>
                       <Input readOnly disabled value={String(envBaseline.probe_concurrency)} />
                     </div>
                     <div className="field-group">
-                      <label className="field-label" style={{ margin: 0 }}>{t("拨测超时时间")}</label>
+                      <label className="field-label field-label-reset">{t("拨测超时时间")}</label>
                       <Input readOnly disabled value={envBaseline.probe_timeout} />
                     </div>
                     <div className="field-group">
-                      <label className="field-label" style={{ margin: 0 }}>{t("资源获取超时时间")}</label>
+                      <label className="field-label field-label-reset">{t("资源获取超时时间")}</label>
                       <Input readOnly disabled value={envBaseline.resource_fetch_timeout} />
                     </div>
                     <div className="field-group">
-                      <label className="field-label" style={{ margin: 0 }}>{t("GeoIP 更新计划")}</label>
+                      <label className="field-label field-label-reset">{t("GeoIP 更新计划")}</label>
                       <Input readOnly disabled value={envBaseline.geoip_update_schedule} />
                     </div>
                     <div className="field-group">
-                      <label className="field-label" style={{ margin: 0 }}>{t("代理传输最大空闲连接")}</label>
+                      <label className="field-label field-label-reset">{t("代理传输最大空闲连接")}</label>
                       <Input readOnly disabled value={String(envBaseline.proxy_transport_max_idle_conns)} />
                     </div>
                     <div className="field-group">
-                      <label className="field-label" style={{ margin: 0 }}>{t("单主机最大空闲连接")}</label>
+                      <label className="field-label field-label-reset">{t("单主机最大空闲连接")}</label>
                       <Input readOnly disabled value={String(envBaseline.proxy_transport_max_idle_conns_per_host)} />
                     </div>
                     <div className="field-group">
-                      <label className="field-label" style={{ margin: 0 }}>{t("空闲连接超时时间")}</label>
+                      <label className="field-label field-label-reset">{t("空闲连接超时时间")}</label>
                       <Input readOnly disabled value={envBaseline.proxy_transport_idle_conn_timeout} />
                     </div>
                   </div>
@@ -829,19 +831,19 @@ export function SystemConfigPage() {
                   <h4>{t("默认平台回退规则")}</h4>
                   <div className="form-grid">
                     <div className="field-group">
-                      <label className="field-label" style={{ margin: 0 }}>{t("默认粘性会话 TTL")}</label>
+                      <label className="field-label field-label-reset">{t("默认粘性会话 TTL")}</label>
                       <Input readOnly disabled value={envBaseline.default_platform_sticky_ttl} />
                     </div>
                     <div className="field-group">
-                      <label className="field-label" style={{ margin: 0 }}>{t("默认节点分配策略")}</label>
+                      <label className="field-label field-label-reset">{t("默认节点分配策略")}</label>
                       <Input readOnly disabled value={t(displayAllocationPolicy(envBaseline.default_platform_allocation_policy))} />
                     </div>
                     <div className="field-group">
-                      <label className="field-label" style={{ margin: 0 }}>{t("默认反代不匹配行为")}</label>
+                      <label className="field-label field-label-reset">{t("默认反代不匹配行为")}</label>
                       <Input readOnly disabled value={t(displayMissAction(envBaseline.default_platform_reverse_proxy_miss_action))} />
                     </div>
                     <div className="field-group">
-                      <label className="field-label" style={{ margin: 0 }}>{t("默认反代空账号行为")}</label>
+                      <label className="field-label field-label-reset">{t("默认反代空账号行为")}</label>
                       <Input
                         readOnly
                         disabled
@@ -849,7 +851,7 @@ export function SystemConfigPage() {
                       />
                     </div>
                     <div className="field-group">
-                      <label className="field-label" style={{ margin: 0 }}>{t("默认反代固定账号 Header 列表")}</label>
+                      <label className="field-label field-label-reset">{t("默认反代固定账号 Header 列表")}</label>
                       <Textarea
                         readOnly
                         disabled
@@ -858,11 +860,11 @@ export function SystemConfigPage() {
                       />
                     </div>
                     <div className="field-group field-span-2">
-                      <label className="field-label" style={{ margin: 0 }}>{t("默认正则黑名单")}</label>
+                      <label className="field-label field-label-reset">{t("默认正则黑名单")}</label>
                       <Textarea readOnly disabled rows={3} value={envBaseline.default_platform_regex_filters?.join("\n") || t("无")} />
                     </div>
                     <div className="field-group field-span-2">
-                      <label className="field-label" style={{ margin: 0 }}>{t("默认地区黑名单")}</label>
+                      <label className="field-label field-label-reset">{t("默认地区黑名单")}</label>
                       <Textarea readOnly disabled rows={2} value={envBaseline.default_platform_region_filters?.join(",") || t("无")} />
                     </div>
                   </div>
@@ -872,23 +874,23 @@ export function SystemConfigPage() {
                   <h4>{t("请求日志落库")}</h4>
                   <div className="form-grid">
                     <div className="field-group">
-                      <label className="field-label" style={{ margin: 0 }}>{t("队列大小")}</label>
+                      <label className="field-label field-label-reset">{t("队列大小")}</label>
                       <Input readOnly disabled value={String(envBaseline.request_log_queue_size)} />
                     </div>
                     <div className="field-group">
-                      <label className="field-label" style={{ margin: 0 }}>{t("落盘批大小")}</label>
+                      <label className="field-label field-label-reset">{t("落盘批大小")}</label>
                       <Input readOnly disabled value={String(envBaseline.request_log_queue_flush_batch_size)} />
                     </div>
                     <div className="field-group">
-                      <label className="field-label" style={{ margin: 0 }}>{t("落盘间隔")}</label>
+                      <label className="field-label field-label-reset">{t("落盘间隔")}</label>
                       <Input readOnly disabled value={envBaseline.request_log_queue_flush_interval} />
                     </div>
                     <div className="field-group">
-                      <label className="field-label" style={{ margin: 0 }}>{t("数据库保留阈值")}</label>
+                      <label className="field-label field-label-reset">{t("数据库保留阈值")}</label>
                       <Input readOnly disabled value={envBaseline.request_log_db_max_mb + " MB"} />
                     </div>
                     <div className="field-group">
-                      <label className="field-label" style={{ margin: 0 }}>{t("数据库旧分片保留数")}</label>
+                      <label className="field-label field-label-reset">{t("数据库旧分片保留数")}</label>
                       <Input readOnly disabled value={String(envBaseline.request_log_db_retain_count)} />
                     </div>
                   </div>
@@ -898,39 +900,39 @@ export function SystemConfigPage() {
                   <h4>{t("可观测性指标")}</h4>
                   <div className="form-grid">
                     <div className="field-group">
-                      <label className="field-label" style={{ margin: 0 }}>{t("吞吐量抽样间隔")}</label>
+                      <label className="field-label field-label-reset">{t("吞吐量抽样间隔")}</label>
                       <Input readOnly disabled value={envBaseline.metric_throughput_interval_seconds + "s"} />
                     </div>
                     <div className="field-group">
-                      <label className="field-label" style={{ margin: 0 }}>{t("吞吐量保留时间")}</label>
+                      <label className="field-label field-label-reset">{t("吞吐量保留时间")}</label>
                       <Input readOnly disabled value={envBaseline.metric_throughput_retention_seconds + "s"} />
                     </div>
                     <div className="field-group">
-                      <label className="field-label" style={{ margin: 0 }}>{t("连接数抽样间隔")}</label>
+                      <label className="field-label field-label-reset">{t("连接数抽样间隔")}</label>
                       <Input readOnly disabled value={envBaseline.metric_connections_interval_seconds + "s"} />
                     </div>
                     <div className="field-group">
-                      <label className="field-label" style={{ margin: 0 }}>{t("连接数保留时间")}</label>
+                      <label className="field-label field-label-reset">{t("连接数保留时间")}</label>
                       <Input readOnly disabled value={envBaseline.metric_connections_retention_seconds + "s"} />
                     </div>
                     <div className="field-group">
-                      <label className="field-label" style={{ margin: 0 }}>{t("租期与连接指标分桶数")}</label>
+                      <label className="field-label field-label-reset">{t("租期与连接指标分桶数")}</label>
                       <Input readOnly disabled value={envBaseline.metric_bucket_seconds + "s"} />
                     </div>
                     <div className="field-group">
-                      <label className="field-label" style={{ margin: 0 }}>{t("租期抽样间隔")}</label>
+                      <label className="field-label field-label-reset">{t("租期抽样间隔")}</label>
                       <Input readOnly disabled value={envBaseline.metric_leases_interval_seconds + "s"} />
                     </div>
                     <div className="field-group">
-                      <label className="field-label" style={{ margin: 0 }}>{t("租期保留时间")}</label>
+                      <label className="field-label field-label-reset">{t("租期保留时间")}</label>
                       <Input readOnly disabled value={envBaseline.metric_leases_retention_seconds + "s"} />
                     </div>
                     <div className="field-group">
-                      <label className="field-label" style={{ margin: 0 }}>{t("延迟统计桶宽")}</label>
+                      <label className="field-label field-label-reset">{t("延迟统计桶宽")}</label>
                       <Input readOnly disabled value={envBaseline.metric_latency_bin_width_ms + "ms"} />
                     </div>
                     <div className="field-group">
-                      <label className="field-label" style={{ margin: 0 }}>{t("延迟统计截断值")}</label>
+                      <label className="field-label field-label-reset">{t("延迟统计截断值")}</label>
                       <Input readOnly disabled value={envBaseline.metric_latency_bin_overflow_ms + "ms"} />
                     </div>
                   </div>
@@ -938,14 +940,14 @@ export function SystemConfigPage() {
 
                 <section className="syscfg-section">
                   <h4>{t("服务鉴权状态")}</h4>
-                  <div className="syscfg-checkbox-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--surface-sunken, rgba(0,0,0,0.02))", padding: "12px 16px", borderRadius: "8px", border: "1px solid var(--border)", opacity: 0.7 }}>
-                      <span className="field-label" style={{ margin: 0, fontWeight: 500 }}>{t("已配置管理端令牌")}</span>
-                      <Switch checked={envBaseline.admin_token_set} disabled />
+                  <div className="syscfg-checkbox-grid syscfg-checkbox-grid-wide">
+                    <div className="syscfg-switch-card syscfg-switch-card-muted">
+                      <label className="field-label field-label-reset syscfg-switch-label" htmlFor="sys-admin-token-set">{t("已配置管理端令牌")}</label>
+                      <Switch id="sys-admin-token-set" checked={envBaseline.admin_token_set} disabled />
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--surface-sunken, rgba(0,0,0,0.02))", padding: "12px 16px", borderRadius: "8px", border: "1px solid var(--border)", opacity: 0.7 }}>
-                      <span className="field-label" style={{ margin: 0, fontWeight: 500 }}>{t("已配置代理令牌")}</span>
-                      <Switch checked={envBaseline.proxy_token_set} disabled />
+                    <div className="syscfg-switch-card syscfg-switch-card-muted">
+                      <label className="field-label field-label-reset syscfg-switch-label" htmlFor="sys-proxy-token-set">{t("已配置代理令牌")}</label>
+                      <Switch id="sys-proxy-token-set" checked={envBaseline.proxy_token_set} disabled />
                     </div>
                   </div>
                 </section>

@@ -1,0 +1,292 @@
+/*
+  Responsive breakpoints:
+  - 1120px: tablet / compact desktop
+  - 760px: mobile
+*/
+
+@media (max-width: 1120px) {
+  .app-shell-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .app-shell-sidebar {
+    position: relative;
+    height: auto;
+    overflow: visible;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .app-shell-nav-scroll {
+    overflow: visible;
+    padding-right: 0;
+    margin-right: 0;
+  }
+
+  .platform-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .rules-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .geoip-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .syscfg-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .platform-card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* removed padding-bottom tweak for platform-detail-tabs */
+
+  .drawer-panel {
+    width: 100vw;
+  }
+
+  .platform-op-item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .platform-op-item .btn {
+    width: 100%;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .tag-list {
+    grid-template-columns: 1fr;
+  }
+
+  .nodes-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .subscriptions-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .subscriptions-toolbar-filters {
+    align-items: stretch;
+  }
+
+  .subscription-inline-filter .select {
+    min-width: 0;
+  }
+
+  .subscription-search-box {
+    width: 100%;
+  }
+
+  .logs-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .nodes-count {
+    align-self: flex-end;
+  }
+
+  .logs-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .nodes-pagination {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .nodes-pagination-controls {
+    justify-content: space-between;
+  }
+}
+
+@media (max-width: 760px) {
+  .app-shell-nav-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .app-shell-main {
+    padding: 14px;
+  }
+
+  .module-header,
+  .topbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .page-title {
+    font-size: 22px;
+  }
+  .platform-detail-toolbar {
+    width: 100%;
+  }
+
+  .platform-detail-toolbar .btn {
+    flex: 1 1 0;
+  }
+
+  .platform-detail-header-main {
+    flex-direction: column;
+  }
+
+  .platform-detail-header-meta {
+    align-items: flex-start;
+  }
+
+  .platform-detail-tab {
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+
+  .filter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .subscriptions-row-actions {
+    flex-wrap: wrap;
+  }
+
+  .subscription-switch-group {
+    grid-template-columns: 1fr;
+  }
+
+  .logs-filter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .geoip-result {
+    grid-template-columns: 1fr;
+  }
+
+  .syscfg-checkbox-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-hist-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .histogram-chart {
+    height: 204px;
+  }
+
+}
+
+/* ── Toast notifications ── */
+
+.toast-container {
+  position: fixed;
+  top: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+  max-width: 420px;
+}
+
+.toast-item {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid;
+  font-size: 14px;
+  box-shadow: 0 12px 32px rgba(21, 57, 108, 0.16);
+  backdrop-filter: blur(10px);
+  animation: toast-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.toast-item.toast-exit {
+  animation: toast-out 0.34s ease forwards;
+}
+
+.toast-success {
+  color: #0a795d;
+  border-color: rgba(4, 136, 103, 0.27);
+  background: rgba(240, 253, 249, 0.95);
+}
+
+.toast-error {
+  color: #982f26;
+  border-color: rgba(195, 58, 47, 0.3);
+  background: rgba(254, 243, 242, 0.95);
+}
+
+.toast-text {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.toast-close {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.55;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.toast-close:hover {
+  opacity: 1;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes toast-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.92);
+  }
+}
+
+/* ── Service Status page ── */

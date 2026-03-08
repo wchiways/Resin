@@ -8,6 +8,7 @@ import { Select } from "../../components/ui/Select";
 import { useI18n } from "../../i18n";
 import { getCurrentLocale, isEnglishLocale } from "../../i18n/locale";
 import { formatApiErrorMessage } from "../../lib/error-message";
+import { kpiIconClass } from "../../lib/kpi-icon-class";
 import {
   type DashboardGlobalHistoryData,
   type DashboardGlobalRealtimeData,
@@ -884,16 +885,16 @@ export function DashboardPage() {
   const activeLatencyHistogram = globalData?.snapshot_latency_global.buckets ?? [];
 
   return (
-    <section className="dashboard-page">
+    <section className="flex flex-col gap-3.5">
       <header className="module-header">
         <div>
           <h2>{t("总览看板")}</h2>
           <p className="module-description">{t("快速发现流量与节点异常，掌握整体运行状态。")}</p>
         </div>
-        <div className="dashboard-header-controls">
-          <label className="dashboard-control">
-            <span>{t("时间范围")}</span>
-            <Select value={rangeKey} onChange={(event) => setRangeKey(event.target.value as RangeKey)}>
+        <div className="flex items-start justify-end max-resin-sm:w-full max-resin-sm:justify-start">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-[#546684]">{t("时间范围")}</span>
+            <Select className="min-w-[190px] max-resin-sm:min-w-0" value={rangeKey} onChange={(event) => setRangeKey(event.target.value as RangeKey)}>
               {RANGE_OPTIONS.map((item) => (
                 <option key={item.key} value={item.key}>
                   {t(item.label)}
@@ -911,66 +912,66 @@ export function DashboardPage() {
         </div>
       ) : null}
 
-      <div className="dashboard-kpi-grid">
-        <Card className="dashboard-kpi-card">
-          <div className="dashboard-kpi-icon waves">
+      <div className="grid grid-cols-4 gap-2.5 max-resin-lg:grid-cols-2 max-resin-sm:grid-cols-1">
+        <Card className="grid grid-cols-[auto_1fr_auto] items-start gap-2.5 p-3 max-resin-sm:grid-cols-[auto_1fr]">
+          <div className={kpiIconClass("waves")}>
             <Waves size={18} />
           </div>
           <div>
-            <p className="dashboard-kpi-label">{t("实时吞吐")}</p>
-            <p className="dashboard-kpi-value">{formatBps(latestIngress + latestEgress)}</p>
-            <p className="dashboard-kpi-sub">
+            <p className="m-0 text-xs text-muted-foreground">{t("实时吞吐")}</p>
+            <p className="mt-[3px] text-[22px] font-bold">{formatBps(latestIngress + latestEgress)}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
               {t("下载")} {formatBps(latestIngress)} · {t("上传")} {formatBps(latestEgress)}
             </p>
           </div>
         </Card>
 
-        <Card className="dashboard-kpi-card">
-          <div className="dashboard-kpi-icon gauge">
+        <Card className="grid grid-cols-[auto_1fr_auto] items-start gap-2.5 p-3 max-resin-sm:grid-cols-[auto_1fr]">
+          <div className={kpiIconClass("gauge")}>
             <Gauge size={18} />
           </div>
           <div>
-            <p className="dashboard-kpi-label">{t("实时连接数")}</p>
-            <p className="dashboard-kpi-value">{formatCount(latestConnections)}</p>
-            <p className="dashboard-kpi-sub">
+            <p className="m-0 text-xs text-muted-foreground">{t("实时连接数")}</p>
+            <p className="mt-[3px] text-[22px] font-bold">{formatCount(latestConnections)}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
               {t("入站")} {formatCount(latestValue(connectionsInbound))} · {t("出站")} {formatCount(latestValue(connectionsOutbound))}
             </p>
           </div>
         </Card>
 
-        <Card className="dashboard-kpi-card dashboard-kpi-card-with-badge">
-          <div className="dashboard-kpi-icon shield">
+        <Card className="grid grid-cols-[auto_1fr_auto] items-start gap-2.5 p-3 max-resin-sm:grid-cols-[auto_1fr_auto]">
+          <div className={kpiIconClass("shield")}>
             <Shield size={18} />
           </div>
           <div>
-            <p className="dashboard-kpi-label">{t("节点健康率")}</p>
-            <p className="dashboard-kpi-value">{formatPercent(nodeHealthRate)}</p>
-            <p className="dashboard-kpi-sub">
+            <p className="m-0 text-xs text-muted-foreground">{t("节点健康率")}</p>
+            <p className="mt-[3px] text-[22px] font-bold">{formatPercent(nodeHealthRate)}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
               {t("健康")} {formatCount(snapshotNodePool?.healthy_nodes ?? 0)} / {t("总计")} {formatCount(snapshotNodePool?.total_nodes ?? 0)}
             </p>
           </div>
-          <Badge className="dashboard-kpi-badge" variant={nodeHealthRate >= 0.75 ? "success" : "warning"}>
+          <Badge className="justify-self-end self-start" variant={nodeHealthRate >= 0.75 ? "success" : "warning"}>
             {formatCount(uniqueHealthyEgressIPs)} IP
           </Badge>
         </Card>
 
-        <Card className="dashboard-kpi-card">
-          <div className="dashboard-kpi-icon lease">
+        <Card className="grid grid-cols-[auto_1fr_auto] items-start gap-2.5 p-3 max-resin-sm:grid-cols-[auto_1fr]">
+          <div className={kpiIconClass("lease")}>
             <Layers size={18} />
           </div>
           <div>
-            <p className="dashboard-kpi-label">{t("活跃租约数")}</p>
-            <p className="dashboard-kpi-value">{formatCount(latestLeases)}</p>
-            <p className="dashboard-kpi-sub">{t("来自所有平台租约总和")}</p>
+            <p className="m-0 text-xs text-muted-foreground">{t("活跃租约数")}</p>
+            <p className="mt-[3px] text-[22px] font-bold">{formatCount(latestLeases)}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">{t("来自所有平台租约总和")}</p>
           </div>
         </Card>
       </div>
 
-      <div className="dashboard-main-grid">
-        <Card className="dashboard-panel span-2">
-          <div className="dashboard-panel-header">
-            <h3>{t("吞吐趋势")}</h3>
-            <p>{t("实时下载 / 上传速率（bps）")}</p>
+      <div className="grid grid-cols-3 gap-2.5 max-resin-lg:grid-cols-2 max-resin-sm:grid-cols-1">
+        <Card className="col-span-2 flex flex-col gap-2.5 p-3 max-resin-sm:col-span-1">
+          <div>
+            <h3 className="m-0 text-base">{t("吞吐趋势")}</h3>
+            <p className="mt-[3px] text-xs text-muted-foreground">{t("实时下载 / 上传速率（bps）")}</p>
           </div>
           <TrendChart
             labels={throughputLabels}
@@ -1001,10 +1002,10 @@ export function DashboardPage() {
           </div>
         </Card>
 
-        <Card className="dashboard-panel">
-          <div className="dashboard-panel-header">
-            <h3>{t("连接峰值")}</h3>
-            <p>{t("实时入站 / 出站连接")}</p>
+        <Card className="flex flex-col gap-2.5 p-3">
+          <div>
+            <h3 className="m-0 text-base">{t("连接峰值")}</h3>
+            <p className="mt-[3px] text-xs text-muted-foreground">{t("实时入站 / 出站连接")}</p>
           </div>
           <TrendChart
             labels={connectionsLabels}
@@ -1035,19 +1036,19 @@ export function DashboardPage() {
           </div>
         </Card>
 
-        <Card className="dashboard-panel span-2">
-          <div className="dashboard-panel-header">
-            <h3>{t("节点延迟分布")}</h3>
-            <p>{t("延迟直方图")}</p>
+        <Card className="col-span-2 flex flex-col gap-2.5 p-3 max-resin-sm:col-span-1">
+          <div>
+            <h3 className="m-0 text-base">{t("节点延迟分布")}</h3>
+            <p className="mt-[3px] text-xs text-muted-foreground">{t("延迟直方图")}</p>
           </div>
 
           <Histogram buckets={activeLatencyHistogram} />
         </Card>
 
-        <Card className="dashboard-panel">
-          <div className="dashboard-panel-header">
-            <h3>{t("节点池趋势")}</h3>
-            <p>{t("节点总数 / 健康节点数")}</p>
+        <Card className="flex flex-col gap-2.5 p-3">
+          <div>
+            <h3 className="m-0 text-base">{t("节点池趋势")}</h3>
+            <p className="mt-[3px] text-xs text-muted-foreground">{t("节点总数 / 健康节点数")}</p>
           </div>
           <TrendChart
             labels={nodeLabels}
@@ -1068,10 +1069,10 @@ export function DashboardPage() {
           />
         </Card>
 
-        <Card className="dashboard-panel">
-          <div className="dashboard-panel-header">
-            <h3>{t("请求统计")}</h3>
-            <p>{t("总请求数 / 成功请求数")}</p>
+        <Card className="flex flex-col gap-2.5 p-3">
+          <div>
+            <h3 className="m-0 text-base">{t("请求统计")}</h3>
+            <p className="mt-[3px] text-xs text-muted-foreground">{t("总请求数 / 成功请求数")}</p>
           </div>
           <TrendChart
             labels={requestLabels}
@@ -1095,10 +1096,10 @@ export function DashboardPage() {
           </div>
         </Card>
 
-        <Card className="dashboard-panel">
-          <div className="dashboard-panel-header">
-            <h3>{t("流量累计")}</h3>
-            <p>{t("窗口内下载 / 上传流量（字节）")}</p>
+        <Card className="flex flex-col gap-2.5 p-3">
+          <div>
+            <h3 className="m-0 text-base">{t("流量累计")}</h3>
+            <p className="mt-[3px] text-xs text-muted-foreground">{t("窗口内下载 / 上传流量（字节）")}</p>
           </div>
           <TrendChart
             labels={trafficLabels}
@@ -1122,10 +1123,10 @@ export function DashboardPage() {
           </div>
         </Card>
 
-        <Card className="dashboard-panel">
-          <div className="dashboard-panel-header">
-            <h3>{t("探测任务量")}</h3>
-            <p>{t("历史探测总次数")}</p>
+        <Card className="flex flex-col gap-2.5 p-3">
+          <div>
+            <h3 className="m-0 text-base">{t("探测任务量")}</h3>
+            <p className="mt-[3px] text-xs text-muted-foreground">{t("历史探测总次数")}</p>
           </div>
           <TrendChart
             labels={probeLabels}

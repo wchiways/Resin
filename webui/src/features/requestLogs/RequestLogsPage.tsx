@@ -22,7 +22,7 @@ import { getRequestLog, getRequestLogPayloads, listRequestLogs } from "./api";
 import type { RequestLogItem, RequestLogListFilters } from "./types";
 
 type BoolFilter = "all" | "true" | "false";
-type ProxyTypeFilter = "all" | "1" | "2";
+type ProxyTypeFilter = "all" | "1" | "2" | "3";
 
 type FilterDraft = {
   from_local: string;
@@ -281,13 +281,59 @@ function proxyTypeLabel(proxyType: number): string {
   if (proxyType === 2) {
     return "反向代理";
   }
+  if (proxyType === 3) {
+    return "SOCKS5";
+  }
   return String(proxyType);
+}
+
+function stageQuickHint(stage?: string): string {
+  if (!stage) {
+    return "";
+  }
+  if (stage.includes("roundtrip")) {
+    return "可能是上游响应超时或连接中断";
+  }
+  if (stage.includes("dial")) {
+    return "可能是上游不可达或连接被拒绝";
+  }
+  if (stage.includes("hijack")) {
+    return "可能是连接升级失败或客户端已断开";
+  }
+  if (stage.includes("copy")) {
+    return "可能是传输中途断流或上游重置";
+  }
+  if (stage.includes("zero_traffic") || stage.includes("no_ingress") || stage.includes("no_egress")) {
+    return "可能是上下游建立后未产生有效流量";
+  }
+  return "请结合错误类型与错误详情继续排查";
+}
+
+function kindQuickHint(kind?: string): string {
+  if (!kind) {
+    return "";
+  }
+  if (kind === "timeout") {
+    return "建议检查超时配置与上游响应时延";
+  }
+  if (kind === "canceled") {
+    return "多为客户端主动取消，可优先排查上游负载是否触发重试";
+  }
+  if (kind === "connection_reset" || kind === "broken_pipe" || kind === "eof") {
+    return "建议检查上游连接稳定性与中间网络设备";
+  }
+  if (kind === "dns_error" || kind === "host_unreachable" || kind === "network_unreachable") {
+    return "建议检查 DNS/路由与出口网络连通性";
+  }
+  if (kind.startsWith("tls_")) {
+    return "建议检查证书链、SNI 与 TLS 协商参数";
+  }
+  return "建议结合阶段与 errno 进行链路定位";
 }
 
 function dateLocale(): string {
   return isEnglishLocale(getCurrentLocale()) ? "en-US" : "zh-CN";
 }
-
 
 function splitDateTime(input: string): { date: string; time: string } {
   if (!input) {
@@ -315,6 +361,100 @@ function splitDateTime(input: string): { date: string; time: string } {
   return { date, time };
 }
 
+type DecodedPayloadData = {
+  headers: string;
+  body: string;
+};
+
+type PayloadDecodeCacheEntry = {
+  signature: string;
+  data: DecodedPayloadData;
+};
+
+type PayloadDecodeCacheState = {
+  entries: Record<string, PayloadDecodeCacheEntry>;
+  order: string[];
+  totalChars: number;
+};
+
+const EMPTY_DECODED_PAYLOAD: DecodedPayloadData = { headers: "", body: "" };
+const PAYLOAD_DECODE_CACHE_LIMIT = 32;
+const PAYLOAD_DECODE_CACHE_CHAR_BUDGET = 2_000_000;
+const PAYLOAD_SIGNATURE_EDGE_SAMPLE_SIZE = 12;
+
+function payloadCacheKey(detailLogId: string, payloadTab: PayloadTab, locale: string): string {
+  return `${detailLogId}:${payloadTab}:${locale}`;
+}
+
+function hashPayloadBase64(rawBase64: string): string {
+  let hash = 2166136261;
+  for (let index = 0; index < rawBase64.length; index += 1) {
+    hash ^= rawBase64.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function samplePayloadSignaturePart(rawBase64: string): string {
+  if (!rawBase64) {
+    return "0:0::";
+  }
+
+  const head = rawBase64.slice(0, PAYLOAD_SIGNATURE_EDGE_SAMPLE_SIZE);
+  const tail = rawBase64.slice(-PAYLOAD_SIGNATURE_EDGE_SAMPLE_SIZE);
+  return `${rawBase64.length}:${hashPayloadBase64(rawBase64)}:${head}:${tail}`;
+}
+
+function decodePayloadSignature(payloadData: Awaited<ReturnType<typeof getRequestLogPayloads>>, payloadTab: PayloadTab): string {
+  const [headersBase64, bodyBase64] =
+    payloadTab === "request"
+      ? [payloadData.req_headers_b64, payloadData.req_body_b64]
+      : [payloadData.resp_headers_b64, payloadData.resp_body_b64];
+  return `${payloadTab}|h=${samplePayloadSignaturePart(headersBase64)}|b=${samplePayloadSignaturePart(bodyBase64)}`;
+}
+
+function payloadDecodeEntryChars(entry: PayloadDecodeCacheEntry): number {
+  return entry.signature.length + entry.data.headers.length + entry.data.body.length;
+}
+
+function payloadDecodeCacheTotalChars(
+  entries: Record<string, PayloadDecodeCacheEntry>,
+  order: string[],
+): number {
+  return order.reduce((sum, key) => {
+    const entry = entries[key];
+    return sum + (entry ? payloadDecodeEntryChars(entry) : 0);
+  }, 0);
+}
+
+function upsertPayloadDecodeCache(
+  cache: PayloadDecodeCacheState,
+  cacheKey: string,
+  entry: PayloadDecodeCacheEntry,
+): PayloadDecodeCacheState {
+  const nextEntries: Record<string, PayloadDecodeCacheEntry> = {
+    ...cache.entries,
+    [cacheKey]: entry,
+  };
+  const nextOrder = [...cache.order.filter((item) => item !== cacheKey), cacheKey];
+  let nextTotalChars = payloadDecodeCacheTotalChars(nextEntries, nextOrder);
+
+  while (nextOrder.length > PAYLOAD_DECODE_CACHE_LIMIT || nextTotalChars > PAYLOAD_DECODE_CACHE_CHAR_BUDGET) {
+    const evictedKey = nextOrder.shift();
+    if (!evictedKey) {
+      break;
+    }
+    delete nextEntries[evictedKey];
+    nextTotalChars = payloadDecodeCacheTotalChars(nextEntries, nextOrder);
+  }
+
+  return {
+    entries: nextEntries,
+    order: nextOrder,
+    totalChars: nextTotalChars,
+  };
+}
+
 export function RequestLogsPage() {
   const { t } = useI18n();
   const [filters, setFilters] = useState<FilterDraft>(defaultFilters);
@@ -323,11 +463,11 @@ export function RequestLogsPage() {
   const [selectedLogId, setSelectedLogId] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [payloadTab, setPayloadTab] = useState<PayloadTab>("request");
-  const [payloadData, setPayloadData] = useState<{ headers: string; body: string }>({
-    headers: "",
-    body: "",
+  const [payloadDecodeCache, setPayloadDecodeCache] = useState<PayloadDecodeCacheState>({
+    entries: {},
+    order: [],
+    totalChars: 0,
   });
-  const [payloadDecodePending, setPayloadDecodePending] = useState(false);
   const { toasts, dismissToast } = useToast();
 
   const configQuery = useQuery({
@@ -461,20 +601,28 @@ export function RequestLogsPage() {
     setDrawerOpen(false);
   };
 
+  const payloadCurrentCacheKey = payloadCacheKey(detailLogId, payloadTab, getCurrentLocale());
+  const payloadCachedEntry = payloadDecodeCache.entries[payloadCurrentCacheKey];
+  const payloadCurrentSignature = useMemo(
+    () => (payloadQuery.data ? decodePayloadSignature(payloadQuery.data, payloadTab) : ""),
+    [payloadQuery.data, payloadTab],
+  );
+
   useEffect(() => {
     let cancelled = false;
     const payload = payloadQuery.data;
 
     if (!payload) {
-      setPayloadData({ headers: "", body: "" });
-      setPayloadDecodePending(false);
       return () => {
         cancelled = true;
       };
     }
 
-    setPayloadData({ headers: "", body: "" });
-    setPayloadDecodePending(true);
+    if (payloadCachedEntry?.signature === payloadCurrentSignature) {
+      return () => {
+        cancelled = true;
+      };
+    }
 
     const decodePayload = async () => {
       const [headersBase64, bodyBase64] =
@@ -490,8 +638,13 @@ export function RequestLogsPage() {
       if (cancelled) {
         return;
       }
-      setPayloadData({ headers, body });
-      setPayloadDecodePending(false);
+
+      setPayloadDecodeCache((prev) =>
+        upsertPayloadDecodeCache(prev, payloadCurrentCacheKey, {
+          signature: payloadCurrentSignature,
+          data: { headers, body },
+        }),
+      );
     };
 
     void decodePayload().catch((error: unknown) => {
@@ -499,14 +652,21 @@ export function RequestLogsPage() {
         return;
       }
       const message = error instanceof Error ? translatePayloadDecodeErrorMessage(error.message, t) : t("未知错误");
-      setPayloadData({ headers: "", body: t("[Body 解码失败：{{message}}]", { message }) });
-      setPayloadDecodePending(false);
+      setPayloadDecodeCache((prev) =>
+        upsertPayloadDecodeCache(prev, payloadCurrentCacheKey, {
+          signature: payloadCurrentSignature,
+          data: { headers: "", body: t("[Body 解码失败：{{message}}]", { message }) },
+        }),
+      );
     });
 
     return () => {
       cancelled = true;
     };
-  }, [payloadQuery.data, payloadTab, t]);
+  }, [payloadCachedEntry?.signature, payloadCurrentCacheKey, payloadCurrentSignature, payloadQuery.data, payloadTab, t]);
+
+  const payloadData = payloadCachedEntry?.data ?? EMPTY_DECODED_PAYLOAD;
+  const payloadDecodePending = Boolean(payloadQuery.data) && payloadCachedEntry?.signature !== payloadCurrentSignature;
 
   const hasMore = Boolean(logsQuery.data?.has_more && logsQuery.data?.next_cursor);
 
@@ -532,6 +692,7 @@ export function RequestLogsPage() {
           const val = info.getValue();
           if (val === 1) return <Badge variant="info">{t("正向")}</Badge>;
           if (val === 2) return <Badge variant="accent">{t("反向")}</Badge>;
+          if (val === 3) return <Badge variant="neutral">{t("SOCKS5")}</Badge>;
           return <Badge variant="neutral">{val}</Badge>;
         },
       }),
@@ -563,7 +724,7 @@ export function RequestLogsPage() {
       }),
       col.display({
         id: "http",
-        header: "HTTP",
+        header: t("HTTP / SOCKS"),
         cell: (info) => {
           const log = info.row.original;
           return (
@@ -635,8 +796,8 @@ export function RequestLogsPage() {
           <p className="module-description">{t("按条件检索请求记录，快速定位问题。")}</p>
         </div>
         {!configQuery.isLoading && configQuery.data && (
-          <Link to="/system-config" style={{ display: "flex", textDecoration: "none" }}>
-            <Badge variant={configQuery.data.request_log_enabled ? "success" : "warning"} style={{ cursor: "pointer", fontSize: "13px", padding: "6px 12px" }}>
+          <Link to="/system-config" className="logs-config-link">
+            <Badge variant={configQuery.data.request_log_enabled ? "success" : "warning"} className="logs-config-badge">
               {configQuery.data.request_log_enabled ? t("当前实时日志记录已开启") : t("当前实时日志记录未开启")}
             </Badge>
           </Link>
@@ -647,14 +808,11 @@ export function RequestLogsPage() {
 
       <Card className="filter-card platform-list-card platform-directory-card">
         <div className="list-card-header">
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", width: "100%" }}>
+          <div className="filter-inline-stack">
             {/* 时间与路由信息 */}
-            <div
-              className="logs-inline-filters"
-              style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "flex-end" }}
-            >
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-                <label htmlFor="logs-from" style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+            <div className="logs-inline-filters inline-filters">
+              <div className="inline-filter-item">
+                <label htmlFor="logs-from" className="inline-filter-label">
                   {t("开始时间")}
                 </label>
                 <Input
@@ -662,12 +820,12 @@ export function RequestLogsPage() {
                   type="datetime-local"
                   value={filters.from_local}
                   onChange={(event) => updateFilter("from_local", event.target.value)}
-                  style={{ width: "100%", padding: "4px 8px", fontSize: "0.875rem", minHeight: "32px", height: "32px" }}
+                  uiSize="sm"
                 />
               </div>
 
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-                <label htmlFor="logs-to" style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+              <div className="inline-filter-item">
+                <label htmlFor="logs-to" className="inline-filter-label">
                   {t("结束时间")}
                 </label>
                 <Input
@@ -675,89 +833,87 @@ export function RequestLogsPage() {
                   type="datetime-local"
                   value={filters.to_local}
                   onChange={(event) => updateFilter("to_local", event.target.value)}
-                  style={{ width: "100%", padding: "4px 8px", fontSize: "0.875rem", minHeight: "32px", height: "32px" }}
+                  uiSize="sm"
                 />
               </div>
 
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-                <label htmlFor="logs-platform-name" style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+              <div className="inline-filter-item">
+                <label htmlFor="logs-platform-name" className="inline-filter-label">
                   {t("平台")}
                 </label>
                 <Input
                   id="logs-platform-name"
                   value={filters.platform_name}
                   onChange={(event) => updateFilter("platform_name", event.target.value)}
-                  style={{ width: "100%", padding: "4px 8px", fontSize: "0.875rem", minHeight: "32px", height: "32px" }}
+                  uiSize="sm"
                 />
               </div>
 
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-                <label htmlFor="logs-account" style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+              <div className="inline-filter-item">
+                <label htmlFor="logs-account" className="inline-filter-label">
                   {t("账号")}
                 </label>
                 <Input
                   id="logs-account"
                   value={filters.account}
                   onChange={(event) => updateFilter("account", event.target.value)}
-                  style={{ width: "100%", padding: "4px 8px", fontSize: "0.875rem", minHeight: "32px", height: "32px" }}
+                  uiSize="sm"
                 />
               </div>
 
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-                <label htmlFor="logs-target-host" style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+              <div className="inline-filter-item">
+                <label htmlFor="logs-target-host" className="inline-filter-label">
                   {t("目标主机")}
                 </label>
                 <Input
                   id="logs-target-host"
                   value={filters.target_host}
                   onChange={(event) => updateFilter("target_host", event.target.value)}
-                  style={{ width: "100%", padding: "4px 8px", fontSize: "0.875rem", minHeight: "32px", height: "32px" }}
+                  uiSize="sm"
                 />
               </div>
             </div>
 
             {/* 网络状态与操作 */}
-            <div
-              className="logs-inline-filters"
-              style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "flex-end" }}
-            >
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-                <label htmlFor="logs-proxy-type" style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+            <div className="logs-inline-filters inline-filters">
+              <div className="inline-filter-item">
+                <label htmlFor="logs-proxy-type" className="inline-filter-label">
                   {t("代理类型")}
                 </label>
                 <Select
                   id="logs-proxy-type"
                   value={filters.proxy_type}
                   onChange={(event) => updateFilter("proxy_type", event.target.value as ProxyTypeFilter)}
-                  style={{ width: "100%", padding: "4px 8px", fontSize: "0.875rem", minHeight: "32px", height: "32px" }}
+                  uiSize="sm"
                 >
                   <option value="all">{t("全部")}</option>
                   <option value="1">{t("正向代理")}</option>
                   <option value="2">{t("反向代理")}</option>
+                  <option value="3">{t("SOCKS5")}</option>
                 </Select>
               </div>
 
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-                <label htmlFor="logs-egress-ip" style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+              <div className="inline-filter-item">
+                <label htmlFor="logs-egress-ip" className="inline-filter-label">
                   {t("出口 IP")}
                 </label>
                 <Input
                   id="logs-egress-ip"
                   value={filters.egress_ip}
                   onChange={(event) => updateFilter("egress_ip", event.target.value)}
-                  style={{ width: "100%", padding: "4px 8px", fontSize: "0.875rem", minHeight: "32px", height: "32px" }}
+                  uiSize="sm"
                 />
               </div>
 
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-                <label htmlFor="logs-net-ok" style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+              <div className="inline-filter-item">
+                <label htmlFor="logs-net-ok" className="inline-filter-label">
                   {t("网络状态")}
                 </label>
                 <Select
                   id="logs-net-ok"
                   value={filters.net_ok}
                   onChange={(event) => updateFilter("net_ok", event.target.value as BoolFilter)}
-                  style={{ width: "100%", padding: "4px 8px", fontSize: "0.875rem", minHeight: "32px", height: "32px" }}
+                  uiSize="sm"
                 >
                   <option value="all">{t("全部")}</option>
                   <option value="true">{t("成功")}</option>
@@ -765,8 +921,8 @@ export function RequestLogsPage() {
                 </Select>
               </div>
 
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-                <label htmlFor="logs-http-status" style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+              <div className="inline-filter-item">
+                <label htmlFor="logs-http-status" className="inline-filter-label">
                   {t("HTTP 状态")}
                 </label>
                 <Input
@@ -774,17 +930,17 @@ export function RequestLogsPage() {
                   placeholder="100-599"
                   value={filters.http_status}
                   onChange={(event) => updateFilter("http_status", event.target.value)}
-                  style={{ width: "100%", padding: "4px 8px", fontSize: "0.875rem", minHeight: "32px", height: "32px" }}
+                  uiSize="sm"
                 />
               </div>
 
-              <div style={{ flex: "0 0 auto", display: "flex", gap: "0.5rem", marginBottom: "0.125rem", marginLeft: "auto" }}>
+              <div className="inline-filter-actions">
                 <Button
                   size="sm"
                   variant="secondary"
                   onClick={() => void logsQuery.refetch()}
                   disabled={logsQuery.isFetching}
-                  style={{ minHeight: "32px", height: "32px", padding: "0 0.75rem", display: "flex", alignItems: "center", gap: "0.25rem" }}
+                  className="inline-filter-action-btn"
                 >
                   <RefreshCw size={14} className={logsQuery.isFetching ? "spin" : undefined} />
                   {t("刷新")}
@@ -793,7 +949,7 @@ export function RequestLogsPage() {
                   size="sm"
                   variant="secondary"
                   onClick={resetFilters}
-                  style={{ minHeight: "32px", height: "32px", padding: "0 0.75rem", display: "flex", alignItems: "center", gap: "0.25rem" }}
+                  className="inline-filter-action-btn"
                 >
                   <Eraser size={14} />
                   {t("重置")}
@@ -900,7 +1056,7 @@ export function RequestLogsPage() {
                     </p>
                   </div>
                   <div>
-                    <span>HTTP</span>
+                    <span>{t("HTTP / SOCKS")}</span>
                     <p>
                       {detailLog.http_method || "-"} {detailLog.http_status || "-"}
                     </p>
@@ -945,40 +1101,52 @@ export function RequestLogsPage() {
                   lineHeight: "1.6",
                 }}>
                   {(detailLog.resin_error || detailLog.upstream_stage || detailLog.upstream_err_kind || detailLog.upstream_errno || detailLog.upstream_err_msg) ? (
-                    <table style={{ borderCollapse: "collapse", width: "100%" }}>
-                      <tbody>
-                        {detailLog.resin_error ? (
-                          <tr>
-                            <td style={{ color: "var(--danger)", fontWeight: 600, paddingBottom: "8px", paddingRight: "16px", whiteSpace: "nowrap", verticalAlign: "top", width: "1%" }}>{t("Resin 错误:")}</td>
-                            <td style={{ color: "var(--text)", paddingBottom: "8px", wordBreak: "break-all", verticalAlign: "top" }}>{detailLog.resin_error}</td>
-                          </tr>
-                        ) : null}
-                        {detailLog.upstream_stage ? (
-                          <tr>
-                            <td style={{ color: "var(--warning)", fontWeight: 600, paddingBottom: "8px", paddingRight: "16px", whiteSpace: "nowrap", verticalAlign: "top", width: "1%" }}>{t("失败阶段:")}</td>
-                            <td style={{ color: "var(--text)", paddingBottom: "8px", wordBreak: "break-all", verticalAlign: "top" }}>{detailLog.upstream_stage}</td>
-                          </tr>
-                        ) : null}
-                        {detailLog.upstream_err_kind ? (
-                          <tr>
-                            <td style={{ fontWeight: 600, paddingBottom: "8px", paddingRight: "16px", whiteSpace: "nowrap", verticalAlign: "top", width: "1%" }}>{t("错误类型:")}</td>
-                            <td style={{ color: "var(--text)", paddingBottom: "8px", wordBreak: "break-all", verticalAlign: "top" }}>{detailLog.upstream_err_kind}</td>
-                          </tr>
-                        ) : null}
-                        {detailLog.upstream_errno ? (
-                          <tr>
-                            <td style={{ fontWeight: 600, paddingBottom: "8px", paddingRight: "16px", whiteSpace: "nowrap", verticalAlign: "top", width: "1%" }}>Errno:</td>
-                            <td style={{ color: "var(--text)", paddingBottom: "8px", wordBreak: "break-all", verticalAlign: "top" }}>{detailLog.upstream_errno}</td>
-                          </tr>
-                        ) : null}
-                        {detailLog.upstream_err_msg ? (
-                          <tr>
-                            <td style={{ fontWeight: 600, paddingBottom: "8px", paddingRight: "16px", whiteSpace: "nowrap", verticalAlign: "top", width: "1%" }}>{t("错误详情:")}</td>
-                            <td style={{ color: "var(--text)", paddingBottom: "8px", wordBreak: "break-all", verticalAlign: "top" }}>{detailLog.upstream_err_msg}</td>
-                          </tr>
-                        ) : null}
-                      </tbody>
-                    </table>
+                    <>
+                      <table style={{ borderCollapse: "collapse", width: "100%" }}>
+                        <tbody>
+                          {detailLog.resin_error ? (
+                            <tr>
+                              <td style={{ color: "var(--danger)", fontWeight: 600, paddingBottom: "8px", paddingRight: "16px", whiteSpace: "nowrap", verticalAlign: "top", width: "1%" }}>{t("Resin 错误:")}</td>
+                              <td style={{ color: "var(--text)", paddingBottom: "8px", wordBreak: "break-all", verticalAlign: "top" }}>{detailLog.resin_error}</td>
+                            </tr>
+                          ) : null}
+                          {detailLog.upstream_stage ? (
+                            <tr>
+                              <td style={{ color: "var(--warning)", fontWeight: 600, paddingBottom: "8px", paddingRight: "16px", whiteSpace: "nowrap", verticalAlign: "top", width: "1%" }}>{t("失败阶段:")}</td>
+                              <td style={{ color: "var(--text)", paddingBottom: "8px", wordBreak: "break-all", verticalAlign: "top" }}>{detailLog.upstream_stage}</td>
+                            </tr>
+                          ) : null}
+                          {detailLog.upstream_err_kind ? (
+                            <tr>
+                              <td style={{ fontWeight: 600, paddingBottom: "8px", paddingRight: "16px", whiteSpace: "nowrap", verticalAlign: "top", width: "1%" }}>{t("错误类型:")}</td>
+                              <td style={{ color: "var(--text)", paddingBottom: "8px", wordBreak: "break-all", verticalAlign: "top" }}>{detailLog.upstream_err_kind}</td>
+                            </tr>
+                          ) : null}
+                          {detailLog.upstream_errno ? (
+                            <tr>
+                              <td style={{ fontWeight: 600, paddingBottom: "8px", paddingRight: "16px", whiteSpace: "nowrap", verticalAlign: "top", width: "1%" }}>Errno:</td>
+                              <td style={{ color: "var(--text)", paddingBottom: "8px", wordBreak: "break-all", verticalAlign: "top" }}>{detailLog.upstream_errno}</td>
+                            </tr>
+                          ) : null}
+                          {detailLog.upstream_err_msg ? (
+                            <tr>
+                              <td style={{ fontWeight: 600, paddingBottom: "8px", paddingRight: "16px", whiteSpace: "nowrap", verticalAlign: "top", width: "1%" }}>{t("错误详情:")}</td>
+                              <td style={{ color: "var(--text)", paddingBottom: "8px", wordBreak: "break-all", verticalAlign: "top" }}>{detailLog.upstream_err_msg}</td>
+                            </tr>
+                          ) : null}
+                        </tbody>
+                      </table>
+                      {(kindQuickHint(detailLog.upstream_err_kind) || stageQuickHint(detailLog.upstream_stage)) ? (
+                        <div className="callout callout-warning" style={{ marginTop: "10px" }}>
+                          <AlertTriangle size={14} />
+                          <span>
+                            {kindQuickHint(detailLog.upstream_err_kind) && stageQuickHint(detailLog.upstream_stage)
+                              ? `${kindQuickHint(detailLog.upstream_err_kind)}；${stageQuickHint(detailLog.upstream_stage)}`
+                              : kindQuickHint(detailLog.upstream_err_kind) || stageQuickHint(detailLog.upstream_stage)}
+                          </span>
+                        </div>
+                      ) : null}
+                    </>
                   ) : null}
                   {!detailLog.resin_error && !detailLog.upstream_stage && !detailLog.upstream_err_kind && !detailLog.upstream_err_msg ? (
                     <div style={{ color: "var(--success)", display: "flex", alignItems: "center", gap: "6px" }}>

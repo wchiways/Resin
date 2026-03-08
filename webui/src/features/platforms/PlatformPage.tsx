@@ -2,7 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Info, Plus, RefreshCw, Search, Sparkles } from "lucide-react";
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
@@ -78,7 +78,10 @@ export function PlatformPage() {
     resolver: zodResolver(platformFormSchema),
     defaultValues: defaultPlatformFormValues,
   });
-  const createEmptyAccountBehavior = createForm.watch("reverse_proxy_empty_account_behavior");
+  const createEmptyAccountBehavior = useWatch({
+    control: createForm.control,
+    name: "reverse_proxy_empty_account_behavior",
+  });
 
   const createMutation = useMutation({
     mutationFn: createPlatform,

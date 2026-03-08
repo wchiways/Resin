@@ -58,6 +58,7 @@ export type EnvConfig = {
   proxy_token_set: boolean;
   admin_token_weak: boolean;
   proxy_token_weak: boolean;
+  proxy_token: string;
 };
 
 export type RuntimeConfigPatch = Partial<RuntimeConfig>;

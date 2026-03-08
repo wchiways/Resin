@@ -1,0 +1,274 @@
+/* AppShell responsive utility */
+.app-shell-layout {
+  display: grid;
+  min-height: 100vh;
+  grid-template-columns: 280px minmax(0, 1fr);
+}
+
+.app-shell-sidebar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  height: 100vh;
+  flex-direction: column;
+  gap: 18px;
+  overflow: hidden;
+  border-right: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(247, 251, 255, 0.95));
+  padding: 1.5rem 18px;
+  backdrop-filter: blur(10px);
+}
+
+.app-shell-nav-scroll {
+  min-height: 0;
+  flex: 1;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 2px;
+  margin-right: -2px;
+}
+
+.app-shell-nav-grid {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding-bottom: 0.25rem;
+}
+
+.app-shell-main {
+  padding: 22px;
+}
+
+/* ── unified data-table ── */
+
+.data-table-wrap {
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: auto;
+  max-height: 560px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.logs-config-link {
+  display: flex;
+  text-decoration: none;
+}
+
+.logs-config-badge {
+  cursor: pointer;
+  font-size: 13px;
+  padding: 6px 12px;
+}
+
+.subscriptions-table-card .data-table-wrap,
+.rules-table-card .data-table-wrap {
+  margin-top: 0;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 1100px;
+}
+
+.data-table-rules {
+  min-width: 780px;
+}
+
+.data-table-subs {
+  min-width: 900px;
+}
+
+.data-table th,
+.data-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid rgba(37, 72, 120, 0.1);
+  vertical-align: middle;
+  font-size: 13px;
+}
+
+.data-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: rgba(240, 247, 255, 0.95);
+  backdrop-filter: blur(6px);
+  color: #40516d;
+  font-weight: 700;
+}
+
+.data-table tbody tr {
+  transition: background-color 0.16s ease;
+  cursor: pointer;
+}
+
+.data-table-row-clickable {
+  cursor: pointer;
+}
+
+.data-table-row-clickable:focus-visible {
+  outline: 0;
+  box-shadow: inset 0 0 0 2px rgba(20, 112, 255, 0.38);
+  background: rgba(20, 112, 255, 0.08);
+}
+
+.data-table tbody tr:hover {
+  background: rgba(20, 112, 255, 0.06);
+}
+
+.data-table-row-selected {
+  background: rgba(20, 112, 255, 0.11);
+}
+
+.nodes-row-selected {
+  background: rgba(20, 112, 255, 0.11);
+}
+
+.nodes-filter-item {
+  flex: 1 1 120px;
+  min-width: 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.nodes-cell-truncate {
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nodes-tag-cell {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.nodes-tag-cell span {
+  font-weight: 700;
+  max-width: 240px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.nodes-tag-cell small {
+  color: var(--text-muted);
+}
+
+.nodes-row-actions {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.nodes-detail-card {
+  padding: 16px;
+}
+
+.logs-detail-card {
+  padding: 16px;
+}
+
+.table-sort-btn {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  color: inherit;
+  cursor: pointer;
+}
+
+.table-sort-btn>span {
+  font-size: 11px;
+  color: #5f7291;
+}
+
+.nodes-pagination {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.nodes-pagination-meta {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.nodes-pagination-controls {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.nodes-page-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.nodes-page-size>span {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.nodes-page-size .select {
+  width: 84px;
+  height: 36px;
+  padding: 0 10px;
+}
+
+.nodes-page-jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.nodes-page-jump>span {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.nodes-page-jump .select {
+  width: 96px;
+  height: 36px;
+  padding: 0 10px;
+}
+
+.nodes-pagination-controls .btn-sm {
+  height: 36px;
+  padding: 0 10px;
+}
+
+.resolve-result {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.74);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.resolve-headers {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.resolve-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}

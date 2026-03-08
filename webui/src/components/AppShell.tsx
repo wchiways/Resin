@@ -12,7 +12,7 @@ import {
   Server,
   Settings,
 } from "lucide-react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Button } from "./ui/Button";
 import { cn } from "../lib/cn";
@@ -44,6 +44,7 @@ export function AppShell() {
   const clearToken = useAuthStore((state) => state.clearToken);
   const token = useAuthStore((state) => state.token);
   const navigate = useNavigate();
+  const location = useLocation();
   const envConfigQuery = useQuery({
     queryKey: ["system-config-env", "shell"],
     queryFn: getEnvConfig,
@@ -73,59 +74,73 @@ export function AppShell() {
   };
 
   return (
-    <div className="app-layout">
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-logo" aria-hidden="true">
-            <img src={logoSrc} alt="Resin Logo" style={{ width: 20, height: 20 }} />
+    <div className="app-shell-layout">
+      <aside className="app-shell-sidebar">
+        <div className="flex min-w-0 items-center gap-3 p-2">
+          <div
+            className="inline-flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[11px] bg-white shadow-[0_4px_12px_rgba(0,0,0,0.05)]"
+            aria-hidden="true"
+          >
+            <img src={logoSrc} alt="Resin Logo" className="block h-5 w-5" />
           </div>
-          <div className="brand-copy">
-            <p className="brand-title">Resin</p>
-            <p className="brand-subtitle">{t("高性能粘性代理池 · 管理面板")}</p>
+          <div className="min-w-0">
+            <p className="text-sm font-bold">Resin</p>
+            <p className="truncate text-xs text-muted-foreground">{t("高性能粘性代理池 · 管理面板")}</p>
           </div>
         </div>
 
-        <div className="sidebar-main">
-          <nav className="nav-list" aria-label={t("主导航")}>
+        <div className="app-shell-nav-scroll">
+          <nav className="app-shell-nav-grid" aria-label={t("主导航")}>
             {navItems.map((item) => {
               const Icon = item.icon;
+              const isCurrentPage = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
               return (
                 <NavLink
                   key={item.path}
                   to={item.path}
-                  className={({ isActive }) => cn("nav-item", isActive && "nav-item-active")}
+                  aria-current={isCurrentPage ? "page" : undefined}
+                  className={({ isActive }) =>
+                    cn(
+                      "inline-flex min-w-0 items-center gap-2.5 rounded-xl border border-transparent px-3 py-2.5 text-[#2f3b51] transition-colors",
+                      "hover:border-border hover:bg-white/80",
+                      isActive &&
+                        "border-[rgba(20,112,255,0.23)] bg-white/95 text-[var(--primary-strong)] shadow-[inset_0_0_0_1px_rgba(20,112,255,0.08)]",
+                    )
+                  }
                 >
                   <Icon size={16} />
-                  <span>{t(item.label)}</span>
+                  <span className="min-w-0 truncate">{t(item.label)}</span>
                 </NavLink>
               );
             })}
           </nav>
         </div>
 
-        <div className="sidebar-bottom">
+        <div className="mt-0 flex shrink-0 flex-col gap-2.5 pt-1">
           {showAuthWarning ? (
-            <div className="callout callout-warning sidebar-warning" role="alert">
+            <div className="callout callout-warning mt-0 max-w-full items-start gap-1.5 p-2.5 text-xs" role="alert">
               <AlertTriangle size={16} />
-              <div className="sidebar-warning-copy">
-                <strong>{t("安全警告")}</strong>
-                <div className="sidebar-warning-list">
+              <div className="flex flex-col gap-1">
+                <strong className="text-xs leading-tight">{t("安全警告")}</strong>
+                <div className="flex flex-col gap-0.5 [overflow-wrap:anywhere] break-words">
                   {authWarnings.map((warning) => (
-                    <span key={warning}>{warning}</span>
+                    <span key={warning} className="text-xs leading-[1.3] [overflow-wrap:anywhere]">
+                      {warning}
+                    </span>
                   ))}
                 </div>
               </div>
             </div>
           ) : null}
 
-          {!token ? <p className="sidebar-hint">{t("当前为免认证访问模式")}</p> : null}
+          {!token ? <p className="m-0 text-center text-xs text-muted-foreground">{t("当前为免认证访问模式")}</p> : null}
 
-          <div className="sidebar-tools">
+          <div className="flex min-h-[34px] items-center gap-2">
             {token ? (
               <Button
                 variant="secondary"
                 size="sm"
-                className="sidebar-icon-btn"
+                className="h-[34px] w-[34px] shrink-0 rounded-[10px] p-0 [&>svg]:h-4 [&>svg]:w-4"
                 onClick={logout}
                 aria-label={t("退出登录")}
                 title={t("退出登录")}
@@ -133,20 +148,20 @@ export function AppShell() {
                 <LogOut size={16} />
               </Button>
             ) : (
-              <span className="sidebar-tool-spacer" aria-hidden="true" />
+              <span className="h-[34px] w-[34px] shrink-0" aria-hidden="true" />
             )}
-            <LanguageSwitcher className="sidebar-locale" compact />
+            <LanguageSwitcher className="ml-auto" compact />
           </div>
         </div>
       </aside>
 
-      <main className="main">
+      <main className="app-shell-main">
         <motion.div
           key="content"
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.24, ease: "easeOut" }}
-          className="content"
+          className="mx-auto flex w-full max-w-[1400px] flex-col gap-4"
         >
           <Outlet />
         </motion.div>

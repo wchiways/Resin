@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createColumnHelper } from "@tanstack/react-table";
 import { AlertTriangle, Eraser, Globe, RefreshCw, Sparkles, X, Zap } from "lucide-react";
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
@@ -46,20 +46,6 @@ const defaultFilterDraft: NodeFilterDraft = {
 
 const PAGE_SIZE_OPTIONS = [20, 50, 100, 200, 500, 1000, 2000, 5000] as const;
 const EMPTY_PLATFORMS: Platform[] = [];
-const NODE_FILTER_ITEM_STYLE: CSSProperties = {
-  flex: "1 1 120px",
-  minWidth: "80px",
-  display: "flex",
-  flexDirection: "column",
-  gap: "0.25rem",
-};
-const NODE_FILTER_CONTROL_STYLE: CSSProperties = {
-  width: "100%",
-  padding: "4px 8px",
-  fontSize: "0.875rem",
-  minHeight: "32px",
-  height: "32px",
-};
 
 function parseBoolParam(value: string | null): boolean | undefined {
   if (value === null) {
@@ -241,7 +227,7 @@ function regionToFlag(region: string | undefined): string {
 }
 
 export function NodesPage() {
-  const { locale, t } = useI18n();
+  const { t } = useI18n();
   const location = useLocation();
   const [draftFilters, setDraftFilters] = useState<NodeFilterDraft>(() => draftFromQuery(location.search));
   const [activeFilters, setActiveFilters] = useState<NodeListFilters>(() =>
@@ -257,7 +243,7 @@ export function NodesPage() {
 
   const queryClient = useQueryClient();
 
-  const allRegions = useMemo(() => getAllRegions(), [locale]);
+  const allRegions = getAllRegions();
 
   const platformsQuery = useQuery({
     queryKey: ["platforms", "all"],
@@ -311,12 +297,9 @@ export function NodesPage() {
 
   const totalPages = Math.max(1, Math.ceil(nodesPage.total / pageSize));
 
-  const selectedNode = useMemo(() => {
-    if (!selectedNodeHash) {
-      return null;
-    }
-    return nodes.find((item) => item.node_hash === selectedNodeHash) ?? null;
-  }, [nodes, selectedNodeHash]);
+  const selectedNode = selectedNodeHash
+    ? nodes.find((item) => item.node_hash === selectedNodeHash) ?? null
+    : null;
 
   const selectedHash = selectedNode?.node_hash || "";
 
@@ -458,7 +441,7 @@ export function NodesPage() {
       cell: (info) => {
         const val = regionToFlag(info.getValue());
         return (
-          <div style={{ maxWidth: "100px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={val}>
+          <div className="nodes-cell-truncate" title={val}>
             {val}
           </div>
         );
@@ -469,7 +452,7 @@ export function NodesPage() {
       cell: (info) => {
         const val = info.getValue() || "-";
         return (
-          <div style={{ maxWidth: "100px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={val}>
+          <div className="nodes-cell-truncate" title={val}>
             {val}
           </div>
         );
@@ -590,17 +573,9 @@ export function NodesPage() {
             <p>{t("共 {{total}} 个节点，{{healthy}} 个健康 IP", { total: nodesPage.total, healthy: nodesPage.unique_healthy_egress_ips })}</p>
           </div>
 
-          <div
-            className="nodes-inline-filters"
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: "0.5rem",
-              alignItems: "flex-end",
-            }}
-          >
-            <div style={NODE_FILTER_ITEM_STYLE}>
-              <label htmlFor="node-tag-keyword" style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+          <div className="nodes-inline-filters inline-filters inline-filters-sm">
+            <div className="nodes-filter-item inline-filter-item-sm">
+              <label htmlFor="node-tag-keyword" className="inline-filter-label">
                 {t("节点名")}
               </label>
               <Input
@@ -608,19 +583,19 @@ export function NodesPage() {
                 value={draftFilters.tag_keyword}
                 onChange={(event) => handleFilterChange("tag_keyword", event.target.value)}
                 placeholder={t("模糊搜索")}
-                style={NODE_FILTER_CONTROL_STYLE}
+                uiSize="sm"
               />
             </div>
 
-            <div style={NODE_FILTER_ITEM_STYLE}>
-              <label htmlFor="node-platform-id" style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+            <div className="nodes-filter-item inline-filter-item-sm">
+              <label htmlFor="node-platform-id" className="inline-filter-label">
                 {t("被此平台路由")}
               </label>
               <Select
                 id="node-platform-id"
                 value={draftFilters.platform_id}
                 onChange={(event) => handleFilterChange("platform_id", event.target.value)}
-                style={NODE_FILTER_CONTROL_STYLE}
+                uiSize="sm"
               >
                 <option value="">{t("无限制")}</option>
                 {platforms.map((p) => (
@@ -631,15 +606,15 @@ export function NodesPage() {
               </Select>
             </div>
 
-            <div style={NODE_FILTER_ITEM_STYLE}>
-              <label htmlFor="node-subscription-id" style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+            <div className="nodes-filter-item inline-filter-item-sm">
+              <label htmlFor="node-subscription-id" className="inline-filter-label">
                 {t("来自此订阅")}
               </label>
               <Select
                 id="node-subscription-id"
                 value={draftFilters.subscription_id}
                 onChange={(event) => handleFilterChange("subscription_id", event.target.value)}
-                style={NODE_FILTER_CONTROL_STYLE}
+                uiSize="sm"
               >
                 <option value="">{t("全部")}</option>
                 {subscriptions.map((s) => (
@@ -650,15 +625,15 @@ export function NodesPage() {
               </Select>
             </div>
 
-            <div style={NODE_FILTER_ITEM_STYLE}>
-              <label htmlFor="node-region" style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+            <div className="nodes-filter-item inline-filter-item-sm">
+              <label htmlFor="node-region" className="inline-filter-label">
                 {t("区域")}
               </label>
               <Select
                 id="node-region"
                 value={draftFilters.region}
                 onChange={(event) => handleFilterChange("region", event.target.value)}
-                style={NODE_FILTER_CONTROL_STYLE}
+                uiSize="sm"
               >
                 <option value="">{t("全部")}</option>
                 {allRegions.map((r) => (
@@ -669,8 +644,8 @@ export function NodesPage() {
               </Select>
             </div>
 
-            <div style={NODE_FILTER_ITEM_STYLE}>
-              <label htmlFor="node-egress-ip" style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+            <div className="nodes-filter-item inline-filter-item-sm">
+              <label htmlFor="node-egress-ip" className="inline-filter-label">
                 {t("出口 IP")}
               </label>
               <Input
@@ -678,19 +653,19 @@ export function NodesPage() {
                 value={draftFilters.egress_ip}
                 onChange={(event) => handleFilterChange("egress_ip", event.target.value)}
                 placeholder="IP / CIDR"
-                style={NODE_FILTER_CONTROL_STYLE}
+                uiSize="sm"
               />
             </div>
 
-            <div style={NODE_FILTER_ITEM_STYLE}>
-              <label htmlFor="node-status" style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+            <div className="nodes-filter-item inline-filter-item-sm">
+              <label htmlFor="node-status" className="inline-filter-label">
                 {t("状态")}
               </label>
               <Select
                 id="node-status"
                 value={draftFilters.status}
                 onChange={(event) => handleFilterChange("status", event.target.value)}
-                style={NODE_FILTER_CONTROL_STYLE}
+                uiSize="sm"
               >
                 <option value="all">{t("全部")}</option>
                 <option value="healthy">{t("健康")}</option>
@@ -699,12 +674,12 @@ export function NodesPage() {
               </Select>
             </div>
 
-            <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.125rem", marginLeft: "auto" }}>
-              <Button size="sm" variant="secondary" onClick={refreshNodes} disabled={nodesQuery.isFetching} style={{ minHeight: "32px", height: "32px", padding: "0 0.75rem", display: "flex", alignItems: "center", gap: "0.25rem" }}>
+            <div className="inline-filter-actions">
+              <Button size="sm" variant="secondary" onClick={refreshNodes} disabled={nodesQuery.isFetching} className="inline-filter-action-btn">
                 <RefreshCw size={16} className={nodesQuery.isFetching ? "spin" : undefined} />
                 {t("刷新")}
               </Button>
-              <Button size="sm" variant="secondary" onClick={resetFilters} style={{ minHeight: "32px", height: "32px", padding: "0 0.75rem", display: "flex", alignItems: "center", gap: "0.25rem" }}>
+              <Button size="sm" variant="secondary" onClick={resetFilters} className="inline-filter-action-btn">
                 <Eraser size={16} />
                 {t("重置")}
               </Button>

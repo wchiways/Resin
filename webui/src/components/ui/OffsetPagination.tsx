@@ -1,7 +1,15 @@
+import { cva } from "class-variance-authority";
 import { useMemo } from "react";
 import { Button } from "./Button";
 import { Select } from "./Select";
 import { useI18n } from "../../i18n";
+import { cn } from "../../lib/cn";
+
+const nodesPaginationVariants = cva("nodes-pagination");
+const nodesPaginationMetaVariants = cva("nodes-pagination-meta");
+const nodesPaginationControlsVariants = cva("nodes-pagination-controls");
+const nodesPageSizeVariants = cva("nodes-page-size");
+const nodesPageJumpVariants = cva("nodes-page-jump");
 
 type OffsetPaginationProps = {
   page: number;
@@ -38,8 +46,8 @@ export function OffsetPagination({
   };
 
   return (
-    <div className="nodes-pagination">
-      <p className="nodes-pagination-meta">
+    <div className={nodesPaginationVariants()}>
+      <p className={nodesPaginationMetaVariants()}>
         {t("第 {{page}} / {{pages}} 页 · 显示 {{start}}-{{end}} / {{total}}", {
           page: normalizedPage + 1,
           pages: normalizedTotalPages,
@@ -48,8 +56,8 @@ export function OffsetPagination({
           total: totalItems,
         })}
       </p>
-      <div className="nodes-pagination-controls">
-        <label className="nodes-page-size">
+      <div className={nodesPaginationControlsVariants()}>
+        <label className={nodesPageSizeVariants()}>
           <span>{t("每页")}</span>
           <Select value={String(pageSize)} onChange={(event) => onPageSizeChange(Number(event.target.value))}>
             {pageSizeOptions.map((size) => (
@@ -60,7 +68,7 @@ export function OffsetPagination({
           </Select>
         </label>
 
-        <label className="nodes-page-jump">
+        <label className={nodesPageJumpVariants()}>
           <span>{t("跳至")}</span>
           <Select
             value={String(normalizedPage)}
@@ -76,10 +84,11 @@ export function OffsetPagination({
           <span>{t("页")}</span>
         </label>
 
-        <Button variant="secondary" size="sm" onClick={() => jumpTo(normalizedPage - 1)} disabled={normalizedPage <= 0}>
+        <Button className={cn("h-9 px-2.5")} variant="secondary" size="sm" onClick={() => jumpTo(normalizedPage - 1)} disabled={normalizedPage <= 0}>
           {t("上一页")}
         </Button>
         <Button
+          className={cn("h-9 px-2.5")}
           variant="secondary"
           size="sm"
           onClick={() => jumpTo(normalizedPage + 1)}

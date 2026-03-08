@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createColumnHelper } from "@tanstack/react-table";
 import { AlertTriangle, Eye, Filter, Info, Pencil, Plus, RefreshCw, Search, Sparkles, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { Link } from "react-router-dom";
 import { z } from "zod";
 import { Badge } from "../../components/ui/Badge";
@@ -184,8 +184,16 @@ export function SubscriptionPage() {
     },
   });
 
-  const createEphemeral = createForm.watch("ephemeral");
-  const createSourceType = createForm.watch("source_type");
+  const createEphemeral = useWatch({
+    control: createForm.control,
+    name: "ephemeral",
+    defaultValue: false,
+  });
+  const createSourceType = useWatch({
+    control: createForm.control,
+    name: "source_type",
+    defaultValue: "remote",
+  });
 
   const editForm = useForm<SubscriptionEditForm>({
     resolver: zodResolver(subscriptionEditSchema),
@@ -201,8 +209,16 @@ export function SubscriptionPage() {
     },
   });
 
-  const editEphemeral = editForm.watch("ephemeral");
-  const editSourceType = editForm.watch("source_type");
+  const editEphemeral = useWatch({
+    control: editForm.control,
+    name: "ephemeral",
+    defaultValue: false,
+  });
+  const editSourceType = useWatch({
+    control: editForm.control,
+    name: "source_type",
+    defaultValue: "remote",
+  });
 
   useEffect(() => {
     if (!selectedSubscription) {
