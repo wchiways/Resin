@@ -223,8 +223,10 @@
 
 .nodes-page-size .select {
   width: 84px;
+  min-height: 36px;
   height: 36px;
-  padding: 0 10px;
+  padding: 4px 28px 4px 10px;
+  font-size: 13px;
 }
 
 .nodes-page-jump {
@@ -240,8 +242,10 @@
 
 .nodes-page-jump .select {
   width: 96px;
+  min-height: 36px;
   height: 36px;
-  padding: 0 10px;
+  padding: 4px 28px 4px 10px;
+  font-size: 13px;
 }
 
 .nodes-pagination-controls .btn-sm {

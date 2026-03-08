@@ -290,3 +290,15 @@
 }
 
 /* ── Service Status page ── */
+
+@media (max-width: 1120px) {
+  .service-status-layout {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 760px) {
+  #status-trends {
+    overflow: hidden;
+  }
+}

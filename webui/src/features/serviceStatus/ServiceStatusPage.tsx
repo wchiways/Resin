@@ -1,15 +1,17 @@
-import { useQuery } from "@tanstack/react-query";
-import { Activity, Cpu, Globe, Info, Wifi, WifiOff } from "lucide-react";
+import { AlertTriangle, Activity } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Badge } from "../../components/ui/Badge";
 import { Card } from "../../components/ui/Card";
 import { useI18n } from "../../i18n";
 import { isEnglishLocale } from "../../i18n/locale";
-import { formatBytes } from "../../lib/bytes";
-import { cn } from "../../lib/cn";
 import { formatApiErrorMessage } from "../../lib/error-message";
 import { formatDateTime } from "../../lib/time";
-import { getSystemStatus } from "./api";
+import { ServiceStatusAlertPanel } from "./components/ServiceStatusAlertPanel";
+import { ServiceStatusCardGrid } from "./components/ServiceStatusCardGrid";
+import { ServiceStatusDiagnosticsPanel } from "./components/ServiceStatusDiagnosticsPanel";
+import { ServiceStatusToolbar } from "./components/ServiceStatusToolbar";
+import { ServiceStatusTrendPanel } from "./components/ServiceStatusTrendPanel";
+import { useServiceStatusController } from "./useServiceStatusController";
 
 function formatUptime(seconds: number, english: boolean): string {
   if (seconds <= 0) return english ? "0s" : "0 秒";
@@ -61,16 +63,33 @@ function LiveUptime({
 export function ServiceStatusPage() {
   const { t, locale } = useI18n();
   const english = isEnglishLocale(locale);
+  const controller = useServiceStatusController();
+  const [copied, setCopied] = useState(false);
 
-  const statusQuery = useQuery({
-    queryKey: ["system-status"],
-    queryFn: getSystemStatus,
-    refetchInterval: 5_000,
-  });
+  const snapshot = controller.snapshot;
 
-  const data = statusQuery.data;
+  useEffect(() => {
+    if (!copied) {
+      return;
+    }
 
-  if (statusQuery.isError) {
+    const timer = window.setTimeout(() => {
+      setCopied(false);
+    }, 1800);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [copied]);
+
+  const handleCopySnapshot = () => {
+    void (async () => {
+      const ok = await controller.actions.copySnapshot();
+      setCopied(ok);
+    })();
+  };
+
+  if (controller.query.isError && !snapshot) {
     return (
       <section className="flex flex-col gap-3.5">
         <header className="module-header">
@@ -79,8 +98,10 @@ export function ServiceStatusPage() {
             <p className="module-description">{t("系统运行状态监控")}</p>
           </div>
         </header>
+
         <div className="callout callout-error">
-          <span>{formatApiErrorMessage(statusQuery.error, t)}</span>
+          <AlertTriangle size={14} />
+          <span>{formatApiErrorMessage(controller.query.error, t)}</span>
         </div>
       </section>
     );
@@ -88,164 +109,100 @@ export function ServiceStatusPage() {
 
   return (
     <section className="flex flex-col gap-3.5">
-      <header className="module-header">
-        <div>
-          <h2>{t("服务状态")}</h2>
-          <p className="module-description">{t("系统运行状态监控")}</p>
+      <ServiceStatusToolbar
+        title={t("服务状态")}
+        description={t("系统运行状态监控")}
+        timeWindow={controller.timeWindow}
+        timeWindowOptions={controller.timeWindowOptions}
+        filters={controller.filters}
+        autoRefreshEnabled={controller.autoRefreshEnabled}
+        isFetching={controller.query.isFetching}
+        onTimeWindowChange={controller.actions.setTimeWindow}
+        onFiltersChange={controller.actions.setFilters}
+        onAutoRefreshChange={controller.actions.setAutoRefresh}
+        onRefresh={() => {
+          void controller.actions.refresh();
+        }}
+        onResetFilters={controller.actions.resetFilters}
+      />
+
+      {controller.query.isError ? (
+        <div className="callout callout-error">
+          <AlertTriangle size={14} />
+          <span>{formatApiErrorMessage(controller.query.error, t)}</span>
         </div>
-      </header>
+      ) : null}
 
-      <div className="mt-3.5 grid grid-cols-2 gap-3.5 max-resin-lg:grid-cols-1">
-        {/* HTTP Proxy */}
-        <Card className="flex flex-col gap-3.5 p-[18px]">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 text-foreground">
-              <Globe size={18} />
-              <h3 className="text-[15px] font-bold">HTTP {t("代理")}</h3>
-            </div>
-            <span
-              className={cn(
-                "h-2.5 w-2.5 shrink-0 rounded-full",
-                data?.http_proxy.enabled
-                  ? "animate-[dot-pulse_2s_ease-in-out_infinite] bg-[var(--success)] shadow-[0_0_8px_rgba(4,136,103,0.45)]"
-                  : "bg-[#b0bac8]",
-              )}
-            />
-          </div>
-          <div className="flex flex-col gap-2">
-            <p className="text-[15px] font-bold text-foreground">{data?.http_proxy.enabled ? t("运行中") : t("已禁用")}</p>
-            <p className="font-mono text-[13px] text-muted-foreground">{data?.http_proxy.listen_address || "-"}</p>
-          </div>
-        </Card>
+      <div className="grid service-status-layout grid-cols-[minmax(0,1fr)_320px] gap-3.5 max-resin-xl:grid-cols-1">
+        <section id="status-alerts">
+          <ServiceStatusAlertPanel alerts={controller.alerts} />
+        </section>
 
-        {/* SOCKS5 Proxy */}
-        <Card className="flex flex-col gap-3.5 p-[18px]">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 text-foreground">
-              {data?.socks5_proxy.enabled ? <Wifi size={18} /> : <WifiOff size={18} />}
-              <h3 className="text-[15px] font-bold">SOCKS5 {t("代理")}</h3>
-            </div>
-            <span
-              className={cn(
-                "h-2.5 w-2.5 shrink-0 rounded-full",
-                data?.socks5_proxy.enabled
-                  ? "animate-[dot-pulse_2s_ease-in-out_infinite] bg-[var(--success)] shadow-[0_0_8px_rgba(4,136,103,0.45)]"
-                  : "bg-[#b0bac8]",
-              )}
-            />
-          </div>
-          <div className="flex flex-col gap-2">
-            <p className="text-[15px] font-bold text-foreground">{data?.socks5_proxy.enabled ? t("运行中") : t("未启用")}</p>
-            <p className="font-mono text-[13px] text-muted-foreground">{data?.socks5_proxy.listen_address || "-"}</p>
-          </div>
-        </Card>
+        <div className="flex flex-col gap-3.5">
+          <Card className="flex flex-col gap-3 p-[14px]">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-foreground">
+                <Activity size={16} />
+                <h3 className="text-base font-bold">{t("运行摘要")}</h3>
+              </div>
 
-        {/* Stability */}
-        <Card className="flex flex-col gap-3.5 p-[18px]">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 text-foreground">
-              <Activity size={18} />
-              <h3 className="text-[15px] font-bold">{t("稳定性")}</h3>
+              {controller.query.isFetching ? <Badge variant="warning">{t("刷新中...")}</Badge> : <Badge variant="success">{t("最新")}</Badge>}
             </div>
-            <Badge variant={data?.stability.queue_degraded ? "warning" : "success"}>
-              {data?.stability.queue_degraded ? t("降级") : t("稳定")}
-            </Badge>
-          </div>
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[13px] text-muted-foreground">{t("队列状态")}</span>
-              <span className="font-mono text-[13px] font-semibold text-foreground">
-                {data
-                  ? `${data.request_log_queue.queue_len}/${data.request_log_queue.queue_capacity}`
-                  : "-"}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[13px] text-muted-foreground">{t("丢弃率")}</span>
-              <span className="font-mono text-[13px] font-semibold text-foreground">
-                {data ? `${data.stability.dropped_rate}%` : "-"}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[13px] text-muted-foreground">{t("失败提示")}</span>
-              <span className="font-mono text-[13px] font-semibold text-foreground">
-                {data
-                  ? `${data.stability.timeout_hint ? t("超时") : "-"} / ${data.stability.cancel_hint ? t("取消") : "-"}`
-                  : "-"}
-              </span>
-            </div>
-            <div className="text-[12px] text-muted-foreground">
-              {data
-                ? `${t("超时窗口")}: ${data.timeouts.proxy_transport_dial_timeout} · ${data.timeouts.proxy_transport_response_header_timeout}`
-                : "-"}
-            </div>
-            <div className="text-[12px] text-muted-foreground">
-              {data
-                ? `${t("请求读取窗口")}: ${data.timeouts.inbound_server_read_header_timeout} / ${data.timeouts.inbound_server_read_timeout}`
-                : "-"}
-            </div>
-          </div>
-        </Card>
 
-        {/* Version Info */}
-        <Card className="flex flex-col gap-3.5 p-[18px]">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 text-foreground">
-              <Info size={18} />
-              <h3 className="text-[15px] font-bold">{t("版本信息")}</h3>
-            </div>
-          </div>
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[13px] text-muted-foreground">Version</span>
-              <span className="font-mono text-[13px] font-semibold text-foreground">
-                {data ? `${data.version} (${data.git_commit.slice(0, 7)})` : "-"}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[13px] text-muted-foreground">{t("运行时长")}</span>
-              <span className="font-mono text-[13px] font-semibold text-foreground">
-                {data ? <LiveUptime baseSeconds={data.uptime_seconds} baselineMs={statusQuery.dataUpdatedAt} english={english} /> : "-"}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[13px] text-muted-foreground">{t("构建时间")}</span>
-              <span className="font-mono text-[13px] font-semibold text-foreground">{data ? formatDateTime(data.build_time) : "-"}</span>
-            </div>
-          </div>
-        </Card>
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[13px] text-muted-foreground">{t("版本")}</span>
+                <span className="font-mono text-[13px] font-semibold text-foreground">
+                  {snapshot ? `${snapshot.status.version} (${snapshot.status.git_commit.slice(0, 7)})` : "-"}
+                </span>
+              </div>
 
-        {/* Resource Usage */}
-        <Card className="flex flex-col gap-3.5 p-[18px]">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 text-foreground">
-              <Cpu size={18} />
-              <h3 className="text-[15px] font-bold">{t("资源使用")}</h3>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[13px] text-muted-foreground">{t("运行时长")}</span>
+                <span className="font-mono text-[13px] font-semibold text-foreground">
+                  {snapshot ? (
+                    <LiveUptime
+                      baseSeconds={snapshot.status.uptime_seconds}
+                      baselineMs={controller.query.dataUpdatedAt || snapshot.timestamp}
+                      english={english}
+                    />
+                  ) : (
+                    "-"
+                  )}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[13px] text-muted-foreground">{t("最近采样")}</span>
+                <span className="font-mono text-[13px] font-semibold text-foreground">
+                  {snapshot ? formatDateTime(snapshot.iso_time) : "-"}
+                </span>
+              </div>
             </div>
-            <Activity size={16} className="animate-[dot-pulse_2s_ease-in-out_infinite] text-[var(--success)]" />
-          </div>
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[13px] text-muted-foreground">{t("内存使用")}</span>
-              <span className="font-mono text-[13px] font-semibold text-foreground">
-                {data ? `${formatBytes(data.memory.heap_alloc_bytes)} / ${formatBytes(data.memory.sys_bytes)}` : "-"}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[13px] text-muted-foreground">{t("GC 次数")}</span>
-              <span className="font-mono text-[13px] font-semibold text-foreground">{data?.memory.num_gc ?? "-"}</span>
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[13px] text-muted-foreground">{t("入站流量")}</span>
-              <span className="font-mono text-[13px] font-semibold text-foreground">{data ? formatBytes(data.traffic.total_ingress_bytes) : "-"}</span>
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[13px] text-muted-foreground">{t("出站流量")}</span>
-              <span className="font-mono text-[13px] font-semibold text-foreground">{data ? formatBytes(data.traffic.total_egress_bytes) : "-"}</span>
-            </div>
-          </div>
-        </Card>
+          </Card>
+
+          <ServiceStatusDiagnosticsPanel canCopy={Boolean(snapshot)} copied={copied} onCopySnapshot={handleCopySnapshot} />
+        </div>
       </div>
+
+      <section id="status-trends">
+        <ServiceStatusTrendPanel trendSeries={controller.trendSeries} />
+      </section>
+
+      <ServiceStatusCardGrid
+        snapshot={snapshot}
+        cards={controller.filteredCards}
+        alerts={controller.alerts}
+        onlyAlerting={controller.filters.only_alerting}
+        onOnlyAlertingChange={(enabled) => controller.actions.setFilters({ only_alerting: enabled })}
+      />
+
+      {controller.query.isLoading && !snapshot ? (
+        <div className="callout callout-warning">
+          <Activity size={14} />
+          <span>{t("服务状态数据加载中...")}</span>
+        </div>
+      ) : null}
     </section>
   );
 }
