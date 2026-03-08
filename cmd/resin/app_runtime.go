@@ -388,6 +388,7 @@ func (a *resinApp) buildNetworkServers(engine *state.StateEngine) error {
 		int64(a.envCfg.APIMaxBodyBytes),
 		a.requestlogRepo,
 		a.metricsManager,
+		a.requestlogSvc,
 	)
 	tokenActionHandler := api.NewTokenActionHandler(
 		a.envCfg.ProxyToken,
@@ -397,9 +398,13 @@ func (a *resinApp) buildNetworkServers(engine *state.StateEngine) error {
 
 	proxyEvents := a.buildProxyEvents()
 	outboundTransportCfg := proxy.OutboundTransportConfig{
-		MaxIdleConns:        a.envCfg.ProxyTransportMaxIdleConns,
-		MaxIdleConnsPerHost: a.envCfg.ProxyTransportMaxIdleConnsPerHost,
-		IdleConnTimeout:     a.envCfg.ProxyTransportIdleConnTimeout,
+		DialTimeout:           a.envCfg.ProxyTransportDialTimeout,
+		TLSHandshakeTimeout:   a.envCfg.ProxyTransportTLSHandshakeTimeout,
+		ResponseHeaderTimeout: a.envCfg.ProxyTransportResponseHeaderTimeout,
+		MaxIdleConns:          a.envCfg.ProxyTransportMaxIdleConns,
+		MaxIdleConnsPerHost:   a.envCfg.ProxyTransportMaxIdleConnsPerHost,
+		MaxConnsPerHost:       a.envCfg.ProxyTransportMaxConnsPerHost,
+		IdleConnTimeout:       a.envCfg.ProxyTransportIdleConnTimeout,
 	}
 	if a.transportPool == nil {
 		a.transportPool = proxy.NewOutboundTransportPool(outboundTransportCfg)
@@ -443,7 +448,14 @@ func (a *resinApp) buildNetworkServers(engine *state.StateEngine) error {
 		return fmt.Errorf("resin server listen: %w", err)
 	}
 	a.inboundLn = proxy.NewCountingListener(inboundLn, a.metricsManager)
-	a.inboundSrv = &http.Server{Handler: inboundHandler}
+	a.inboundSrv = &http.Server{
+		Handler:           inboundHandler,
+		ReadHeaderTimeout: a.envCfg.InboundServerReadHeaderTimeout,
+		ReadTimeout:       a.envCfg.InboundServerReadTimeout,
+		WriteTimeout:      a.envCfg.InboundServerWriteTimeout,
+		IdleTimeout:       a.envCfg.InboundServerIdleTimeout,
+		MaxHeaderBytes:    a.envCfg.InboundServerMaxHeaderBytes,
+	}
 
 	// SOCKS5 server (optional, enabled when RESIN_SOCKS5_PORT != 0).
 	if a.envCfg.Socks5Port != 0 {

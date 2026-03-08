@@ -251,10 +251,12 @@ type ListFilter struct {
 	Account      string
 	TargetHost   string
 	Fuzzy        bool // Enables case-insensitive substring matching on platform_id/platform_name/account/target_host.
-	EgressIP     string
-	NetOK        *bool // true/false filter
-	HTTPStatus   *int  // exact match
-	Before       int64 // ts_ns < Before (0 means no upper bound)
+	EgressIP       string
+	NetOK          *bool // true/false filter
+	HTTPStatus     *int  // exact match
+	UpstreamStage  string
+	ResinError     string
+	Before         int64 // ts_ns < Before (0 means no upper bound)
 	After        int64 // ts_ns > After (0 means no lower bound)
 	Limit        int
 	Cursor       *ListCursor
@@ -565,6 +567,14 @@ func (r *Repo) queryLogs(db *sql.DB, f ListFilter, limit int) ([]LogSummary, err
 	if f.HTTPStatus != nil {
 		where = append(where, "http_status = ?")
 		args = append(args, *f.HTTPStatus)
+	}
+	if f.UpstreamStage != "" {
+		where = append(where, "upstream_stage = ?")
+		args = append(args, f.UpstreamStage)
+	}
+	if f.ResinError != "" {
+		where = append(where, "resin_error = ?")
+		args = append(args, f.ResinError)
 	}
 	if f.Before > 0 {
 		where = append(where, "ts_ns < ?")

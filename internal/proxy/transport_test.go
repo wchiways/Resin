@@ -75,22 +75,66 @@ func TestOutboundTransportPool_EvictRemovesNodeTransport(t *testing.T) {
 
 func TestOutboundTransportPool_AppliesConfiguredLimits(t *testing.T) {
 	pool := newOutboundTransportPoolWithConfig(OutboundTransportConfig{
-		MaxIdleConns:        9,
-		MaxIdleConnsPerHost: 3,
-		IdleConnTimeout:     12 * time.Second,
+		DialTimeout:           6 * time.Second,
+		TLSHandshakeTimeout:   7 * time.Second,
+		ResponseHeaderTimeout: 8 * time.Second,
+		MaxIdleConns:          9,
+		MaxIdleConnsPerHost:   3,
+		MaxConnsPerHost:       11,
+		IdleConnTimeout:       12 * time.Second,
 	})
 	ob := &noopOutbound{}
 	hash := node.Hash{1}
 
 	transport := pool.Get(hash, ob, nil)
+	if transport.TLSHandshakeTimeout != 7*time.Second {
+		t.Fatalf("TLSHandshakeTimeout: got %s, want %s", transport.TLSHandshakeTimeout, 7*time.Second)
+	}
+	if transport.ResponseHeaderTimeout != 8*time.Second {
+		t.Fatalf("ResponseHeaderTimeout: got %s, want %s", transport.ResponseHeaderTimeout, 8*time.Second)
+	}
 	if transport.MaxIdleConns != 9 {
 		t.Fatalf("MaxIdleConns: got %d, want %d", transport.MaxIdleConns, 9)
 	}
 	if transport.MaxIdleConnsPerHost != 3 {
 		t.Fatalf("MaxIdleConnsPerHost: got %d, want %d", transport.MaxIdleConnsPerHost, 3)
 	}
+	if transport.MaxConnsPerHost != 11 {
+		t.Fatalf("MaxConnsPerHost: got %d, want %d", transport.MaxConnsPerHost, 11)
+	}
 	if transport.IdleConnTimeout != 12*time.Second {
 		t.Fatalf("IdleConnTimeout: got %s, want %s", transport.IdleConnTimeout, 12*time.Second)
+	}
+}
+
+func TestNormalizeOutboundTransportConfig_DefaultsAndGuardrails(t *testing.T) {
+	cfg := normalizeOutboundTransportConfig(OutboundTransportConfig{
+		DialTimeout:           0,
+		TLSHandshakeTimeout:   0,
+		ResponseHeaderTimeout: 0,
+		MaxIdleConns:          10,
+		MaxIdleConnsPerHost:   20,
+		MaxConnsPerHost:       5,
+		IdleConnTimeout:       0,
+	})
+
+	if cfg.DialTimeout != defaultTransportDialTimeout {
+		t.Fatalf("DialTimeout: got %s, want %s", cfg.DialTimeout, defaultTransportDialTimeout)
+	}
+	if cfg.TLSHandshakeTimeout != defaultTransportTLSHandshakeTimeout {
+		t.Fatalf("TLSHandshakeTimeout: got %s, want %s", cfg.TLSHandshakeTimeout, defaultTransportTLSHandshakeTimeout)
+	}
+	if cfg.ResponseHeaderTimeout != defaultTransportResponseHeaderTimeout {
+		t.Fatalf("ResponseHeaderTimeout: got %s, want %s", cfg.ResponseHeaderTimeout, defaultTransportResponseHeaderTimeout)
+	}
+	if cfg.MaxIdleConnsPerHost != 10 {
+		t.Fatalf("MaxIdleConnsPerHost: got %d, want %d", cfg.MaxIdleConnsPerHost, 10)
+	}
+	if cfg.MaxConnsPerHost != 10 {
+		t.Fatalf("MaxConnsPerHost: got %d, want %d", cfg.MaxConnsPerHost, 10)
+	}
+	if cfg.IdleConnTimeout != defaultTransportIdleConnTimeout {
+		t.Fatalf("IdleConnTimeout: got %s, want %s", cfg.IdleConnTimeout, defaultTransportIdleConnTimeout)
 	}
 }
 

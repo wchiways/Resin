@@ -55,4 +55,6 @@ CREATE INDEX IF NOT EXISTS idx_request_logs_platform_name ON request_logs(platfo
 CREATE INDEX IF NOT EXISTS idx_request_logs_plat_acct    ON request_logs(platform_id, account);
 CREATE INDEX IF NOT EXISTS idx_request_logs_target_host  ON request_logs(target_host);
 CREATE INDEX IF NOT EXISTS idx_request_logs_egress_ip    ON request_logs(egress_ip);
+CREATE INDEX IF NOT EXISTS idx_request_logs_upstream_stage ON request_logs(upstream_stage);
+CREATE INDEX IF NOT EXISTS idx_request_logs_resin_error  ON request_logs(resin_error);
 `

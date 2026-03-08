@@ -31,6 +31,7 @@ func NewServer(
 	apiMaxBodyBytes int64,
 	requestlogRepo *requestlog.Repo,
 	metricsManager *metrics.Manager,
+	requestlogSvc *requestlog.Service,
 ) *Server {
 	return NewServerWithAddress(
 		"",
@@ -43,6 +44,7 @@ func NewServer(
 		apiMaxBodyBytes,
 		requestlogRepo,
 		metricsManager,
+		requestlogSvc,
 	)
 }
 
@@ -58,6 +60,7 @@ func NewServerWithAddress(
 	apiMaxBodyBytes int64,
 	requestlogRepo *requestlog.Repo,
 	metricsManager *metrics.Manager,
+	requestlogSvc *requestlog.Service,
 ) *Server {
 	mux := http.NewServeMux()
 
@@ -70,7 +73,7 @@ func NewServerWithAddress(
 	authed.Handle("GET /api/v1/system/config", HandleSystemConfig(runtimeCfg))
 	authed.Handle("GET /api/v1/system/config/default", HandleSystemDefaultConfig())
 	authed.Handle("GET /api/v1/system/config/env", HandleSystemEnvConfig(envCfg))
-	authed.Handle("GET /api/v1/system/status", HandleSystemStatus(systemInfo, envCfg, metricsManager))
+	authed.Handle("GET /api/v1/system/status", HandleSystemStatus(systemInfo, envCfg, metricsManager, requestlogSvc))
 
 	if cp != nil {
 		// System config mutations.

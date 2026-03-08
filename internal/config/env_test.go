@@ -65,8 +65,17 @@ func TestLoadEnvConfig_Defaults(t *testing.T) {
 	assertEqual(t, "DefaultPlatformAllocationPolicy", cfg.DefaultPlatformAllocationPolicy, "BALANCED")
 	assertEqual(t, "ProbeTimeout", cfg.ProbeTimeout, 15*time.Second)
 	assertEqual(t, "ResourceFetchTimeout", cfg.ResourceFetchTimeout, 30*time.Second)
+	assertEqual(t, "InboundServerReadHeaderTimeout", cfg.InboundServerReadHeaderTimeout, 15*time.Second)
+	assertEqual(t, "InboundServerReadTimeout", cfg.InboundServerReadTimeout, 30*time.Second)
+	assertEqual(t, "InboundServerWriteTimeout", cfg.InboundServerWriteTimeout, time.Duration(0))
+	assertEqual(t, "InboundServerIdleTimeout", cfg.InboundServerIdleTimeout, 90*time.Second)
+	assertEqual(t, "InboundServerMaxHeaderBytes", cfg.InboundServerMaxHeaderBytes, 1<<20)
+	assertEqual(t, "ProxyTransportDialTimeout", cfg.ProxyTransportDialTimeout, 15*time.Second)
+	assertEqual(t, "ProxyTransportTLSHandshakeTimeout", cfg.ProxyTransportTLSHandshakeTimeout, 10*time.Second)
+	assertEqual(t, "ProxyTransportResponseHeaderTimeout", cfg.ProxyTransportResponseHeaderTimeout, 30*time.Second)
 	assertEqual(t, "ProxyTransportMaxIdleConns", cfg.ProxyTransportMaxIdleConns, 1024)
 	assertEqual(t, "ProxyTransportMaxIdleConnsPerHost", cfg.ProxyTransportMaxIdleConnsPerHost, 64)
+	assertEqual(t, "ProxyTransportMaxConnsPerHost", cfg.ProxyTransportMaxConnsPerHost, 256)
 	assertEqual(t, "ProxyTransportIdleConnTimeout", cfg.ProxyTransportIdleConnTimeout, 90*time.Second)
 
 	// Request log
@@ -107,8 +116,17 @@ func TestLoadEnvConfig_EnvOverrides(t *testing.T) {
 	envs["RESIN_DEFAULT_PLATFORM_ALLOCATION_POLICY"] = "PREFER_LOW_LATENCY"
 	envs["RESIN_PROBE_TIMEOUT"] = "20s"
 	envs["RESIN_RESOURCE_FETCH_TIMEOUT"] = "45s"
+	envs["RESIN_INBOUND_SERVER_READ_HEADER_TIMEOUT"] = "8s"
+	envs["RESIN_INBOUND_SERVER_READ_TIMEOUT"] = "20s"
+	envs["RESIN_INBOUND_SERVER_WRITE_TIMEOUT"] = "35s"
+	envs["RESIN_INBOUND_SERVER_IDLE_TIMEOUT"] = "50s"
+	envs["RESIN_INBOUND_SERVER_MAX_HEADER_BYTES"] = "131072"
+	envs["RESIN_PROXY_TRANSPORT_DIAL_TIMEOUT"] = "6s"
+	envs["RESIN_PROXY_TRANSPORT_TLS_HANDSHAKE_TIMEOUT"] = "7s"
+	envs["RESIN_PROXY_TRANSPORT_RESPONSE_HEADER_TIMEOUT"] = "8s"
 	envs["RESIN_PROXY_TRANSPORT_MAX_IDLE_CONNS"] = "2048"
 	envs["RESIN_PROXY_TRANSPORT_MAX_IDLE_CONNS_PER_HOST"] = "128"
+	envs["RESIN_PROXY_TRANSPORT_MAX_CONNS_PER_HOST"] = "192"
 	envs["RESIN_PROXY_TRANSPORT_IDLE_CONN_TIMEOUT"] = "2m"
 	envs["RESIN_REQUEST_LOG_QUEUE_FLUSH_INTERVAL"] = "10m"
 	setEnvs(t, envs)
@@ -146,8 +164,17 @@ func TestLoadEnvConfig_EnvOverrides(t *testing.T) {
 	assertEqual(t, "DefaultPlatformAllocationPolicy", cfg.DefaultPlatformAllocationPolicy, "PREFER_LOW_LATENCY")
 	assertEqual(t, "ProbeTimeout", cfg.ProbeTimeout, 20*time.Second)
 	assertEqual(t, "ResourceFetchTimeout", cfg.ResourceFetchTimeout, 45*time.Second)
+	assertEqual(t, "InboundServerReadHeaderTimeout", cfg.InboundServerReadHeaderTimeout, 8*time.Second)
+	assertEqual(t, "InboundServerReadTimeout", cfg.InboundServerReadTimeout, 20*time.Second)
+	assertEqual(t, "InboundServerWriteTimeout", cfg.InboundServerWriteTimeout, 35*time.Second)
+	assertEqual(t, "InboundServerIdleTimeout", cfg.InboundServerIdleTimeout, 50*time.Second)
+	assertEqual(t, "InboundServerMaxHeaderBytes", cfg.InboundServerMaxHeaderBytes, 131072)
+	assertEqual(t, "ProxyTransportDialTimeout", cfg.ProxyTransportDialTimeout, 6*time.Second)
+	assertEqual(t, "ProxyTransportTLSHandshakeTimeout", cfg.ProxyTransportTLSHandshakeTimeout, 7*time.Second)
+	assertEqual(t, "ProxyTransportResponseHeaderTimeout", cfg.ProxyTransportResponseHeaderTimeout, 8*time.Second)
 	assertEqual(t, "ProxyTransportMaxIdleConns", cfg.ProxyTransportMaxIdleConns, 2048)
 	assertEqual(t, "ProxyTransportMaxIdleConnsPerHost", cfg.ProxyTransportMaxIdleConnsPerHost, 128)
+	assertEqual(t, "ProxyTransportMaxConnsPerHost", cfg.ProxyTransportMaxConnsPerHost, 192)
 	assertEqual(t, "ProxyTransportIdleConnTimeout", cfg.ProxyTransportIdleConnTimeout, 2*time.Minute)
 	if cfg.RequestLogQueueFlushInterval.String() != "10m0s" {
 		t.Errorf("RequestLogQueueFlushInterval: got %v, want 10m", cfg.RequestLogQueueFlushInterval)
@@ -508,10 +535,33 @@ func TestLoadEnvConfig_InvalidProbeTimeout(t *testing.T) {
 	assertContains(t, err.Error(), "RESIN_PROBE_TIMEOUT")
 }
 
+func TestLoadEnvConfig_InvalidInboundServerSettings(t *testing.T) {
+	envs := requiredEnvs()
+	envs["RESIN_INBOUND_SERVER_READ_HEADER_TIMEOUT"] = "31s"
+	envs["RESIN_INBOUND_SERVER_READ_TIMEOUT"] = "30s"
+	envs["RESIN_INBOUND_SERVER_WRITE_TIMEOUT"] = "10s"
+	envs["RESIN_INBOUND_SERVER_IDLE_TIMEOUT"] = "20s"
+	envs["RESIN_INBOUND_SERVER_MAX_HEADER_BYTES"] = "0"
+	setEnvs(t, envs)
+
+	_, err := LoadEnvConfig()
+	if err == nil {
+		t.Fatal("expected error for invalid inbound server settings")
+	}
+	assertContains(t, err.Error(), "RESIN_INBOUND_SERVER_READ_HEADER_TIMEOUT")
+	assertContains(t, err.Error(), "RESIN_INBOUND_SERVER_WRITE_TIMEOUT")
+	assertContains(t, err.Error(), "RESIN_INBOUND_SERVER_IDLE_TIMEOUT")
+	assertContains(t, err.Error(), "RESIN_INBOUND_SERVER_MAX_HEADER_BYTES")
+}
+
 func TestLoadEnvConfig_InvalidProxyTransportSettings(t *testing.T) {
 	envs := requiredEnvs()
+	envs["RESIN_PROXY_TRANSPORT_DIAL_TIMEOUT"] = "0s"
+	envs["RESIN_PROXY_TRANSPORT_TLS_HANDSHAKE_TIMEOUT"] = "0s"
+	envs["RESIN_PROXY_TRANSPORT_RESPONSE_HEADER_TIMEOUT"] = "0s"
 	envs["RESIN_PROXY_TRANSPORT_MAX_IDLE_CONNS"] = "16"
 	envs["RESIN_PROXY_TRANSPORT_MAX_IDLE_CONNS_PER_HOST"] = "32"
+	envs["RESIN_PROXY_TRANSPORT_MAX_CONNS_PER_HOST"] = "8"
 	envs["RESIN_PROXY_TRANSPORT_IDLE_CONN_TIMEOUT"] = "0s"
 	setEnvs(t, envs)
 
@@ -519,8 +569,12 @@ func TestLoadEnvConfig_InvalidProxyTransportSettings(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for invalid proxy transport settings")
 	}
+	assertContains(t, err.Error(), "RESIN_PROXY_TRANSPORT_DIAL_TIMEOUT")
+	assertContains(t, err.Error(), "RESIN_PROXY_TRANSPORT_TLS_HANDSHAKE_TIMEOUT")
+	assertContains(t, err.Error(), "RESIN_PROXY_TRANSPORT_RESPONSE_HEADER_TIMEOUT")
 	assertContains(t, err.Error(), "RESIN_PROXY_TRANSPORT_IDLE_CONN_TIMEOUT")
 	assertContains(t, err.Error(), "RESIN_PROXY_TRANSPORT_MAX_IDLE_CONNS_PER_HOST")
+	assertContains(t, err.Error(), "RESIN_PROXY_TRANSPORT_MAX_CONNS_PER_HOST")
 }
 
 // --- test helpers ---

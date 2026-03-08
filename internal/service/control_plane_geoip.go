@@ -40,7 +40,7 @@ func (s *ControlPlaneService) LookupIP(ipStr string) (string, error) {
 // UpdateGeoIPNow triggers an immediate GeoIP database update (blocks).
 func (s *ControlPlaneService) UpdateGeoIPNow() error {
 	if err := s.GeoIP.UpdateNow(); err != nil {
-		return internal("geoip update failed", err)
+		return internal("geoip update failed: "+err.Error(), err)
 	}
 	return nil
 }

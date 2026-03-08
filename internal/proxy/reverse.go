@@ -1,6 +1,8 @@
 package proxy
 
 import (
+	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptrace"
@@ -114,6 +116,31 @@ type parsedPath struct {
 	// Path preserves the original escaped remaining path after host (may be
 	// empty), e.g. "v1/users/team%2Fa/profile".
 	Path string
+}
+
+type reverseCopyErrorTracker struct {
+	rc      io.ReadCloser
+	copyErr error
+}
+
+func newReverseCopyErrorTracker(rc io.ReadCloser) *reverseCopyErrorTracker {
+	return &reverseCopyErrorTracker{rc: rc}
+}
+
+func (c *reverseCopyErrorTracker) Read(p []byte) (int, error) {
+	n, err := c.rc.Read(p)
+	if err != nil && !errors.Is(err, io.EOF) && c.copyErr == nil {
+		c.copyErr = err
+	}
+	return n, err
+}
+
+func (c *reverseCopyErrorTracker) Close() error {
+	return c.rc.Close()
+}
+
+func (c *reverseCopyErrorTracker) CopyErr() error {
+	return c.copyErr
 }
 
 // forwardingIdentityHeaders are commonly used to disclose proxy chain identity.
@@ -339,6 +366,16 @@ func (p *ReverseProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		detailCfg = provider.reverseDetailCaptureConfig()
 	}
 
+	recordReverseCopyFailure := func(copyErr error) bool {
+		if copyErr == nil {
+			return false
+		}
+		if r != nil && errors.Is(r.Context().Err(), context.Canceled) {
+			return false
+		}
+		return classifyUpstreamError(copyErr) != nil
+	}
+
 	parsed, perr := p.parsePath(r.URL.EscapedPath())
 	if perr != nil {
 		writeProxyError(w, perr)
@@ -350,6 +387,8 @@ func (p *ReverseProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var egressBodyCounter *countingReadCloser
 	var ingressBodyCounter *countingReadCloser
 	var upgradedStreamCounter *countingReadWriteCloser
+	var reverseIngressCopyErrorTracker *reverseCopyErrorTracker
+	var reverseBodyCopyCheckRequired bool
 	if detailCfg.Enabled {
 		reqHeaders, reqHeadersLen, reqHeadersTruncated := captureHeadersWithLimit(r.Header, detailCfg.ReqHeadersMaxBytes)
 		lifecycle.setReqHeadersCaptured(reqHeaders, reqHeadersLen, reqHeadersTruncated)
@@ -455,12 +494,13 @@ func (p *ReverseProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					respHeaders, respHeadersLen, respHeadersTruncated := captureHeadersWithLimit(resp.Header, detailCfg.RespHeadersMaxBytes)
 					lifecycle.setRespHeadersCaptured(respHeaders, respHeadersLen, respHeadersTruncated)
 				}
-				lifecycle.setNetOK(true)
-				go p.health.RecordResult(nodeHashRaw, true)
+				reverseBodyCopyCheckRequired = true
 				return nil
 			}
 			if resp.Body != nil && resp.Body != http.NoBody {
 				body := resp.Body
+				reverseIngressCopyErrorTracker = newReverseCopyErrorTracker(body)
+				body = reverseIngressCopyErrorTracker
 				if detailCfg.Enabled {
 					respHeaders, respHeadersLen, respHeadersTruncated := captureHeadersWithLimit(resp.Header, detailCfg.RespHeadersMaxBytes)
 					lifecycle.setRespHeadersCaptured(respHeaders, respHeadersLen, respHeadersTruncated)
@@ -474,13 +514,7 @@ func (p *ReverseProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				respHeaders, respHeadersLen, respHeadersTruncated := captureHeadersWithLimit(resp.Header, detailCfg.RespHeadersMaxBytes)
 				lifecycle.setRespHeadersCaptured(respHeaders, respHeadersLen, respHeadersTruncated)
 			}
-			// Intentional coarse-grained policy:
-			// mark node success once upstream response headers arrive.
-			// Further attribution for mid-body stream failures is expensive and noisy
-			// (client abort vs upstream reset vs network blip), and the added
-			// complexity is not worth it for the current phase.
-			lifecycle.setNetOK(true)
-			go p.health.RecordResult(nodeHashRaw, true)
+			reverseBodyCopyCheckRequired = true
 			return nil
 		},
 	}
@@ -495,6 +529,21 @@ func (p *ReverseProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if upgradedStreamCounter != nil {
 		lifecycle.addIngressBytes(upgradedStreamCounter.TotalRead())
 		lifecycle.addEgressBytes(upgradedStreamCounter.TotalWrite())
+	}
+	if reverseBodyCopyCheckRequired {
+		reverseCopyErr := error(nil)
+		if reverseIngressCopyErrorTracker != nil {
+			reverseCopyErr = reverseIngressCopyErrorTracker.CopyErr()
+		}
+		if recordReverseCopyFailure(reverseCopyErr) {
+			lifecycle.setProxyError(ErrUpstreamRequestFailed)
+			lifecycle.setUpstreamError("reverse_upstream_to_client_copy", reverseCopyErr)
+			lifecycle.setNetOK(false)
+			go p.health.RecordResult(nodeHashRaw, false)
+			return
+		}
+		lifecycle.setNetOK(true)
+		go p.health.RecordResult(nodeHashRaw, true)
 	}
 }
 

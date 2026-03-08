@@ -167,6 +167,57 @@ func TestRepo_InsertListGetPayloads(t *testing.T) {
 		t.Fatalf("strict partial list len: got %d, want 0", len(strictPartial))
 	}
 
+	stageFiltered, hasMore, nextCursor, err := repo.List(ListFilter{
+		UpstreamStage: "reverse_roundtrip",
+		Limit:         10,
+	})
+	if err != nil {
+		t.Fatalf("repo.List upstream_stage filtered: %v", err)
+	}
+	if hasMore {
+		t.Fatalf("upstream_stage filtered hasMore: got true, want false")
+	}
+	if nextCursor != nil {
+		t.Fatalf("upstream_stage filtered nextCursor: got %+v, want nil", nextCursor)
+	}
+	if len(stageFiltered) != 1 || stageFiltered[0].ID != "log-b" {
+		t.Fatalf("upstream_stage filtered list: got %+v", stageFiltered)
+	}
+
+	errorFiltered, hasMore, nextCursor, err := repo.List(ListFilter{
+		ResinError: "UPSTREAM_REQUEST_FAILED",
+		Limit:      10,
+	})
+	if err != nil {
+		t.Fatalf("repo.List resin_error filtered: %v", err)
+	}
+	if hasMore {
+		t.Fatalf("resin_error filtered hasMore: got true, want false")
+	}
+	if nextCursor != nil {
+		t.Fatalf("resin_error filtered nextCursor: got %+v, want nil", nextCursor)
+	}
+	if len(errorFiltered) != 1 || errorFiltered[0].ID != "log-b" {
+		t.Fatalf("resin_error filtered list: got %+v", errorFiltered)
+	}
+
+	missingErrorFiltered, hasMore, nextCursor, err := repo.List(ListFilter{
+		ResinError: "NOT_EXISTS",
+		Limit:      10,
+	})
+	if err != nil {
+		t.Fatalf("repo.List missing resin_error filtered: %v", err)
+	}
+	if hasMore {
+		t.Fatalf("missing resin_error filtered hasMore: got true, want false")
+	}
+	if nextCursor != nil {
+		t.Fatalf("missing resin_error filtered nextCursor: got %+v, want nil", nextCursor)
+	}
+	if len(missingErrorFiltered) != 0 {
+		t.Fatalf("missing resin_error filtered list len: got %d, want 0", len(missingErrorFiltered))
+	}
+
 	row, err := repo.GetByID("log-a")
 	if err != nil {
 		t.Fatalf("repo.GetByID: %v", err)
@@ -312,6 +363,55 @@ func TestService_RepoReadFlushesQueuedLogs(t *testing.T) {
 	}
 	if rows[0].ID != "barrier-log-1" {
 		t.Fatalf("row id: got %q, want %q", rows[0].ID, "barrier-log-1")
+	}
+}
+
+func TestService_StatsSnapshotCounters(t *testing.T) {
+	repo := NewRepo(t.TempDir(), 1<<20, 5)
+	if err := repo.Open(); err != nil {
+		t.Fatalf("repo.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+
+	svc := NewService(ServiceConfig{
+		Repo:          repo,
+		QueueSize:     1,
+		FlushBatch:    100,
+		FlushInterval: time.Hour,
+	})
+	svc.Start()
+	t.Cleanup(svc.Stop)
+
+	svc.EmitRequestLog(proxy.RequestLogEntry{ID: "stats-1", StartedAtNs: time.Now().UnixNano(), ProxyType: proxy.ProxyTypeForward})
+	svc.EmitRequestLog(proxy.RequestLogEntry{ID: "stats-drop", StartedAtNs: time.Now().UnixNano(), ProxyType: proxy.ProxyTypeForward})
+
+	snapBeforeFlush := svc.StatsSnapshot()
+	if snapBeforeFlush.EnqueuedTotal != 1 {
+		t.Fatalf("enqueued_total before flush: got %d, want 1", snapBeforeFlush.EnqueuedTotal)
+	}
+	if snapBeforeFlush.DroppedTotal != 1 {
+		t.Fatalf("dropped_total before flush: got %d, want 1", snapBeforeFlush.DroppedTotal)
+	}
+	if snapBeforeFlush.QueueCapacity != 1 {
+		t.Fatalf("queue_capacity: got %d, want 1", snapBeforeFlush.QueueCapacity)
+	}
+	if snapBeforeFlush.QueueLen != 1 {
+		t.Fatalf("queue_len before flush: got %d, want 1", snapBeforeFlush.QueueLen)
+	}
+
+	svc.FlushNow()
+	snapAfterFlush := svc.StatsSnapshot()
+	if snapAfterFlush.FlushTotal < 1 {
+		t.Fatalf("flush_total after flush: got %d, want >=1", snapAfterFlush.FlushTotal)
+	}
+	if snapAfterFlush.FlushFailedTotal != 0 {
+		t.Fatalf("flush_failed_total after flush: got %d, want 0", snapAfterFlush.FlushFailedTotal)
+	}
+	if snapAfterFlush.FlushedEntriesTotal != 1 {
+		t.Fatalf("flushed_entries_total after flush: got %d, want 1", snapAfterFlush.FlushedEntriesTotal)
+	}
+	if snapAfterFlush.QueueLen != 0 {
+		t.Fatalf("queue_len after flush: got %d, want 0", snapAfterFlush.QueueLen)
 	}
 }
 

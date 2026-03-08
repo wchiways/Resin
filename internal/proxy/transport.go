@@ -13,26 +13,52 @@ import (
 )
 
 type OutboundTransportConfig struct {
-	MaxIdleConns        int
-	MaxIdleConnsPerHost int
-	IdleConnTimeout     time.Duration
+	DialTimeout           time.Duration
+	TLSHandshakeTimeout   time.Duration
+	ResponseHeaderTimeout time.Duration
+	MaxIdleConns          int
+	MaxIdleConnsPerHost   int
+	MaxConnsPerHost       int
+	IdleConnTimeout       time.Duration
 }
 
 const (
-	defaultTransportMaxIdleConns        = 1024
-	defaultTransportMaxIdleConnsPerHost = 64
-	defaultTransportIdleConnTimeout     = 90 * time.Second
+	defaultTransportDialTimeout           = 15 * time.Second
+	defaultTransportTLSHandshakeTimeout   = 10 * time.Second
+	defaultTransportResponseHeaderTimeout = 30 * time.Second
+	defaultTransportMaxIdleConns          = 1024
+	defaultTransportMaxIdleConnsPerHost   = 64
+	defaultTransportMaxConnsPerHost       = 256
+	defaultTransportIdleConnTimeout       = 90 * time.Second
 )
 
 func normalizeOutboundTransportConfig(cfg OutboundTransportConfig) OutboundTransportConfig {
+	if cfg.DialTimeout <= 0 {
+		cfg.DialTimeout = defaultTransportDialTimeout
+	}
+	if cfg.TLSHandshakeTimeout <= 0 {
+		cfg.TLSHandshakeTimeout = defaultTransportTLSHandshakeTimeout
+	}
+	if cfg.ResponseHeaderTimeout <= 0 {
+		cfg.ResponseHeaderTimeout = defaultTransportResponseHeaderTimeout
+	}
 	if cfg.MaxIdleConns <= 0 {
 		cfg.MaxIdleConns = defaultTransportMaxIdleConns
 	}
 	if cfg.MaxIdleConnsPerHost <= 0 {
 		cfg.MaxIdleConnsPerHost = defaultTransportMaxIdleConnsPerHost
 	}
+	if cfg.MaxConnsPerHost <= 0 {
+		cfg.MaxConnsPerHost = defaultTransportMaxConnsPerHost
+	}
 	if cfg.IdleConnTimeout <= 0 {
 		cfg.IdleConnTimeout = defaultTransportIdleConnTimeout
+	}
+	if cfg.MaxIdleConnsPerHost > cfg.MaxIdleConns {
+		cfg.MaxIdleConnsPerHost = cfg.MaxIdleConns
+	}
+	if cfg.MaxConnsPerHost < cfg.MaxIdleConnsPerHost {
+		cfg.MaxConnsPerHost = cfg.MaxIdleConnsPerHost
 	}
 	return cfg
 }
@@ -96,7 +122,9 @@ func (p *OutboundTransportPool) CloseAll() {
 func (p *OutboundTransportPool) newReusableOutboundTransport(ob adapter.Outbound, sink MetricsEventSink) *http.Transport {
 	return &http.Transport{
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			conn, err := ob.DialContext(ctx, network, M.ParseSocksaddr(addr))
+			dialCtx, cancel := context.WithTimeout(ctx, p.config.DialTimeout)
+			defer cancel()
+			conn, err := ob.DialContext(dialCtx, network, M.ParseSocksaddr(addr))
 			if err != nil {
 				return nil, err
 			}
@@ -106,10 +134,13 @@ func (p *OutboundTransportPool) newReusableOutboundTransport(ob adapter.Outbound
 			}
 			return conn, nil
 		},
-		DisableKeepAlives:   false,
-		ForceAttemptHTTP2:   true,
-		MaxIdleConns:        p.config.MaxIdleConns,
-		MaxIdleConnsPerHost: p.config.MaxIdleConnsPerHost,
-		IdleConnTimeout:     p.config.IdleConnTimeout,
+		DisableKeepAlives:     false,
+		ForceAttemptHTTP2:     true,
+		TLSHandshakeTimeout:   p.config.TLSHandshakeTimeout,
+		ResponseHeaderTimeout: p.config.ResponseHeaderTimeout,
+		MaxIdleConns:          p.config.MaxIdleConns,
+		MaxIdleConnsPerHost:   p.config.MaxIdleConnsPerHost,
+		MaxConnsPerHost:       p.config.MaxConnsPerHost,
+		IdleConnTimeout:       p.config.IdleConnTimeout,
 	}
 }

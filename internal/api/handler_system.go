@@ -9,6 +9,7 @@ import (
 
 	"github.com/Resinat/Resin/internal/config"
 	"github.com/Resinat/Resin/internal/metrics"
+	"github.com/Resinat/Resin/internal/requestlog"
 	"github.com/Resinat/Resin/internal/service"
 )
 
@@ -161,8 +162,11 @@ type systemStatusResponse struct {
 	HTTPProxy   serviceStatusEntry `json:"http_proxy"`
 	SOCKS5Proxy serviceStatusEntry `json:"socks5_proxy"`
 
-	Memory  memoryStatus  `json:"memory"`
-	Traffic trafficStatus `json:"traffic"`
+	Memory          memoryStatus              `json:"memory"`
+	Traffic         trafficStatus             `json:"traffic"`
+	RequestLogQueue requestLogQueueStatus     `json:"request_log_queue"`
+	Stability       systemStabilityStatus     `json:"stability"`
+	Timeouts        systemTimeoutConfigStatus `json:"timeouts"`
 }
 
 type serviceStatusEntry struct {
@@ -182,11 +186,43 @@ type trafficStatus struct {
 	TotalEgressBytes  int64 `json:"total_egress_bytes"`
 }
 
+type requestLogQueueStatus struct {
+	QueueLen            int   `json:"queue_len"`
+	QueueCapacity       int   `json:"queue_capacity"`
+	EnqueuedTotal       int64 `json:"enqueued_total"`
+	DroppedTotal        int64 `json:"dropped_total"`
+	FlushTotal          int64 `json:"flush_total"`
+	FlushFailedTotal    int64 `json:"flush_failed_total"`
+	FlushedEntriesTotal int64 `json:"flushed_entries_total"`
+}
+
+type systemStabilityStatus struct {
+	ProxyHealthy     bool  `json:"proxy_healthy"`
+	TrafficIncreased bool  `json:"traffic_increased"`
+	QueueDegraded    bool  `json:"queue_degraded"`
+	DroppedTotal     int64 `json:"dropped_total"`
+	DroppedRate      int64 `json:"dropped_rate"`
+	CancelHint       bool  `json:"cancel_hint"`
+	TimeoutHint      bool  `json:"timeout_hint"`
+}
+
+type systemTimeoutConfigStatus struct {
+	InboundServerReadHeaderTimeout      config.Duration `json:"inbound_server_read_header_timeout"`
+	InboundServerReadTimeout            config.Duration `json:"inbound_server_read_timeout"`
+	InboundServerWriteTimeout           config.Duration `json:"inbound_server_write_timeout"`
+	InboundServerIdleTimeout            config.Duration `json:"inbound_server_idle_timeout"`
+	ProxyTransportDialTimeout           config.Duration `json:"proxy_transport_dial_timeout"`
+	ProxyTransportTLSHandshakeTimeout   config.Duration `json:"proxy_transport_tls_handshake_timeout"`
+	ProxyTransportResponseHeaderTimeout config.Duration `json:"proxy_transport_response_header_timeout"`
+	ProxyTransportIdleConnTimeout       config.Duration `json:"proxy_transport_idle_conn_timeout"`
+}
+
 // HandleSystemStatus returns a handler for GET /api/v1/system/status.
 func HandleSystemStatus(
 	info service.SystemInfo,
 	envCfg *config.EnvConfig,
 	metricsManager *metrics.Manager,
+	requestlogSvc *requestlog.Service,
 ) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var ms runtime.MemStats
@@ -198,6 +234,20 @@ func HandleSystemStatus(
 		var socks5Addr string
 		if socks5Enabled {
 			socks5Addr = fmt.Sprintf("%s:%d", envCfg.ListenAddress, envCfg.Socks5Port)
+		}
+
+		requestLogQueue := requestLogQueueStatus{}
+		if requestlogSvc != nil {
+			stats := requestlogSvc.StatsSnapshot()
+			requestLogQueue = requestLogQueueStatus{
+				QueueLen:            stats.QueueLen,
+				QueueCapacity:       stats.QueueCapacity,
+				EnqueuedTotal:       stats.EnqueuedTotal,
+				DroppedTotal:        stats.DroppedTotal,
+				FlushTotal:          stats.FlushTotal,
+				FlushFailedTotal:    stats.FlushFailedTotal,
+				FlushedEntriesTotal: stats.FlushedEntriesTotal,
+			}
 		}
 
 		resp := systemStatusResponse{
@@ -224,7 +274,41 @@ func HandleSystemStatus(
 				TotalIngressBytes: snap.IngressBytes,
 				TotalEgressBytes:  snap.EgressBytes,
 			},
+			RequestLogQueue: requestLogQueue,
+			Stability: systemStabilityStatus{
+				ProxyHealthy:     true,
+				TrafficIncreased: snap.IngressBytes > 0 || snap.EgressBytes > 0,
+				QueueDegraded:    requestLogQueue.DroppedTotal > 0,
+				DroppedTotal:     requestLogQueue.DroppedTotal,
+				DroppedRate:      droppedRate(requestLogQueue.DroppedTotal, requestLogQueue.EnqueuedTotal),
+				CancelHint:       true,
+				TimeoutHint:      true,
+			},
+			Timeouts: systemTimeoutConfigStatus{
+				InboundServerReadHeaderTimeout:      config.Duration(envCfg.InboundServerReadHeaderTimeout),
+				InboundServerReadTimeout:            config.Duration(envCfg.InboundServerReadTimeout),
+				InboundServerWriteTimeout:           config.Duration(envCfg.InboundServerWriteTimeout),
+				InboundServerIdleTimeout:            config.Duration(envCfg.InboundServerIdleTimeout),
+				ProxyTransportDialTimeout:           config.Duration(envCfg.ProxyTransportDialTimeout),
+				ProxyTransportTLSHandshakeTimeout:   config.Duration(envCfg.ProxyTransportTLSHandshakeTimeout),
+				ProxyTransportResponseHeaderTimeout: config.Duration(envCfg.ProxyTransportResponseHeaderTimeout),
+				ProxyTransportIdleConnTimeout:       config.Duration(envCfg.ProxyTransportIdleConnTimeout),
+			},
 		}
 		WriteJSON(w, http.StatusOK, resp)
 	}
+}
+
+func droppedRate(droppedTotal int64, enqueuedTotal int64) int64 {
+	if enqueuedTotal <= 0 {
+		if droppedTotal > 0 {
+			return 100
+		}
+		return 0
+	}
+	total := droppedTotal + enqueuedTotal
+	if total <= 0 {
+		return 0
+	}
+	return droppedTotal * 100 / total
 }

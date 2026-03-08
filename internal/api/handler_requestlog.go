@@ -62,11 +62,23 @@ func HandleListRequestLogs(repo *requestlog.Repo) http.Handler {
 			return
 		}
 
-		proxyType, ok := parseBoundedIntQuery(w, r, "proxy_type", 1, 2, "proxy_type: must be 1 or 2")
+		proxyType, ok := parseBoundedIntQuery(w, r, "proxy_type", 1, 3, "proxy_type: must be 1, 2 or 3")
 		if !ok {
 			return
 		}
 		f.ProxyType = proxyType
+
+		upstreamStage, ok := parseRequestLogTokenQuery(w, r, "upstream_stage")
+		if !ok {
+			return
+		}
+		f.UpstreamStage = upstreamStage
+
+		resinError, ok := parseRequestLogTokenQuery(w, r, "resin_error")
+		if !ok {
+			return
+		}
+		f.ResinError = resinError
 
 		netOK, ok := parseStrictBoolQuery(w, r, "net_ok")
 		if !ok {
@@ -274,6 +286,34 @@ func parseStrictBoolQuery(w http.ResponseWriter, r *http.Request, key string) (*
 		writeInvalidArgument(w, key+": must be true or false")
 		return nil, false
 	}
+}
+
+const requestLogFilterTokenMaxLen = 64
+
+func parseRequestLogTokenQuery(w http.ResponseWriter, r *http.Request, key string) (string, bool) {
+	v := r.URL.Query().Get(key)
+	if v == "" {
+		return "", true
+	}
+	if len(v) > requestLogFilterTokenMaxLen {
+		writeInvalidArgument(w, key+": must match [A-Za-z0-9_-]{1,64}")
+		return "", false
+	}
+	for _, ch := range v {
+		if !isRequestLogTokenChar(ch) {
+			writeInvalidArgument(w, key+": must match [A-Za-z0-9_-]{1,64}")
+			return "", false
+		}
+	}
+	return v, true
+}
+
+func isRequestLogTokenChar(ch rune) bool {
+	return (ch >= 'a' && ch <= 'z') ||
+		(ch >= 'A' && ch <= 'Z') ||
+		(ch >= '0' && ch <= '9') ||
+		ch == '_' ||
+		ch == '-'
 }
 
 // --- Response types ---

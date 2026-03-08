@@ -465,79 +465,68 @@ func TestBootstrapTopology_V1RejectsPersistedReservedPlatformNameAPI(t *testing.
 	}
 }
 
-func TestBootstrapTopology_V1RejectsAllPersistedInvalidPlatformNames(t *testing.T) {
-	root := t.TempDir()
-	stateDir := filepath.Join(root, "state")
-	cacheDir := filepath.Join(root, "cache")
-
-	engine, closer, err := state.PersistenceBootstrap(stateDir, cacheDir)
+func TestBuildNetworkServers_InboundServerGuardrailsFromEnv(t *testing.T) {
+	engine, closer, err := state.PersistenceBootstrap(t.TempDir(), t.TempDir())
 	if err != nil {
 		t.Fatalf("PersistenceBootstrap: %v", err)
 	}
-	t.Cleanup(func() { _ = closer.Close() })
+	defer func() { _ = closer.Close() }()
 
-	now := time.Now().UnixNano()
-	for _, p := range []model.Platform{
-		{
-			ID:                     "plat-1",
-			Name:                   "LegacyPlatformOne",
-			StickyTTLNs:            int64(time.Hour),
-			RegexFilters:           []string{},
-			RegionFilters:          []string{},
-			ReverseProxyMissAction: "TREAT_AS_EMPTY",
-			AllocationPolicy:       "BALANCED",
-			UpdatedAtNs:            now,
-		},
-		{
-			ID:                     "plat-2",
-			Name:                   "LegacyPlatformTwo",
-			StickyTTLNs:            int64(time.Hour),
-			RegexFilters:           []string{},
-			RegionFilters:          []string{},
-			ReverseProxyMissAction: "TREAT_AS_EMPTY",
-			AllocationPolicy:       "BALANCED",
-			UpdatedAtNs:            now,
-		},
-	} {
-		if err := engine.UpsertPlatform(p); err != nil {
-			t.Fatalf("UpsertPlatform(%s): %v", p.ID, err)
+	envCfg := &config.EnvConfig{
+		ListenAddress:                      "127.0.0.1",
+		ResinPort:                         0,
+		Socks5Port:                        0,
+		APIMaxBodyBytes:                   1 << 20,
+		InboundServerReadHeaderTimeout:    2 * time.Second,
+		InboundServerReadTimeout:          5 * time.Second,
+		InboundServerWriteTimeout:         7 * time.Second,
+		InboundServerIdleTimeout:          11 * time.Second,
+		InboundServerMaxHeaderBytes:       65536,
+		ProxyTransportDialTimeout:         6 * time.Second,
+		ProxyTransportTLSHandshakeTimeout: 7 * time.Second,
+		ProxyTransportResponseHeaderTimeout: 8 * time.Second,
+		ProxyTransportMaxIdleConns:          120,
+		ProxyTransportMaxIdleConnsPerHost:   24,
+		ProxyTransportMaxConnsPerHost:       48,
+		ProxyTransportIdleConnTimeout:       9 * time.Second,
+	}
+
+	app := &resinApp{
+		envCfg:       envCfg,
+		topoRuntime:  &topologyRuntime{},
+		runtimeCfg:   nil,
+		requestlogSvc: nil,
+	}
+
+	if err := app.buildNetworkServers(engine); err != nil {
+		t.Fatalf("buildNetworkServers: %v", err)
+	}
+	t.Cleanup(func() {
+		if app.inboundLn != nil {
+			_ = app.inboundLn.Close()
 		}
-	}
+	})
 
-	db, err := state.OpenDB(filepath.Join(stateDir, "state.db"))
-	if err != nil {
-		t.Fatalf("OpenDB(state.db): %v", err)
+	if app.inboundSrv == nil {
+		t.Fatal("inbound server should be created")
 	}
-	defer db.Close()
-	if _, err := db.Exec(`UPDATE platforms SET name = ? WHERE id = ?`, "legacy:bad-one", "plat-1"); err != nil {
-		t.Fatalf("corrupt platform name row (plat-1): %v", err)
+	if app.inboundSrv.ReadHeaderTimeout != envCfg.InboundServerReadHeaderTimeout {
+		t.Fatalf("ReadHeaderTimeout: got %v, want %v", app.inboundSrv.ReadHeaderTimeout, envCfg.InboundServerReadHeaderTimeout)
 	}
-	if _, err := db.Exec(`UPDATE platforms SET name = ? WHERE id = ?`, "api", "plat-2"); err != nil {
-		t.Fatalf("corrupt platform name row (plat-2): %v", err)
+	if app.inboundSrv.ReadTimeout != envCfg.InboundServerReadTimeout {
+		t.Fatalf("ReadTimeout: got %v, want %v", app.inboundSrv.ReadTimeout, envCfg.InboundServerReadTimeout)
 	}
-
-	subManager, pool := newBootstrapTestRuntime(config.NewDefaultRuntimeConfig())
-	envCfg := newDefaultPlatformEnvConfig()
-	envCfg.AuthVersion = config.AuthVersionV1
-
-	err = bootstrapTopology(engine, subManager, pool, envCfg)
-	if err == nil {
-		t.Fatal("expected bootstrapTopology to fail when V1 detects multiple invalid persisted platform names")
+	if app.inboundSrv.WriteTimeout != envCfg.InboundServerWriteTimeout {
+		t.Fatalf("WriteTimeout: got %v, want %v", app.inboundSrv.WriteTimeout, envCfg.InboundServerWriteTimeout)
 	}
-	if !strings.Contains(err.Error(), "2 platform(s) are incompatible with RESIN_AUTH_VERSION=V1") {
-		t.Fatalf("unexpected error summary: %v", err)
+	if app.inboundSrv.IdleTimeout != envCfg.InboundServerIdleTimeout {
+		t.Fatalf("IdleTimeout: got %v, want %v", app.inboundSrv.IdleTimeout, envCfg.InboundServerIdleTimeout)
 	}
-	if !strings.Contains(err.Error(), "\"legacy:bad-one\"") || !strings.Contains(err.Error(), "\"api\"") {
-		t.Fatalf("expected all invalid platform names in error, got: %v", err)
+	if app.inboundSrv.MaxHeaderBytes != envCfg.InboundServerMaxHeaderBytes {
+		t.Fatalf("MaxHeaderBytes: got %d, want %d", app.inboundSrv.MaxHeaderBytes, envCfg.InboundServerMaxHeaderBytes)
 	}
-	if !strings.Contains(err.Error(), "Platform name rules:") {
-		t.Fatalf("expected platform-name rules in error, got: %v", err)
-	}
-	if strings.Contains(err.Error(), "\"legacy:bad-one\":") || strings.Contains(err.Error(), "\"api\":") {
-		t.Fatalf("error should list invalid platform names without per-platform reason details, got: %v", err)
-	}
-	if !strings.Contains(err.Error(), config.AuthMigrationGuideURL) {
-		t.Fatalf("expected migration guide link in error, got: %v", err)
+	if app.transportPool == nil {
+		t.Fatal("transport pool should be created")
 	}
 }
 

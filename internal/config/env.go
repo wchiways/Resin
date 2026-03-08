@@ -42,8 +42,17 @@ type EnvConfig struct {
 	DefaultPlatformAllocationPolicy                 string
 	ProbeTimeout                                    time.Duration
 	ResourceFetchTimeout                            time.Duration
+	InboundServerReadHeaderTimeout                  time.Duration
+	InboundServerReadTimeout                        time.Duration
+	InboundServerWriteTimeout                       time.Duration
+	InboundServerIdleTimeout                        time.Duration
+	InboundServerMaxHeaderBytes                     int
+	ProxyTransportDialTimeout                       time.Duration
+	ProxyTransportTLSHandshakeTimeout               time.Duration
+	ProxyTransportResponseHeaderTimeout             time.Duration
 	ProxyTransportMaxIdleConns                      int
 	ProxyTransportMaxIdleConnsPerHost               int
+	ProxyTransportMaxConnsPerHost                   int
 	ProxyTransportIdleConnTimeout                   time.Duration
 
 	// Request log
@@ -112,8 +121,17 @@ func LoadEnvConfig() (*EnvConfig, error) {
 	)
 	cfg.ProbeTimeout = envDuration("RESIN_PROBE_TIMEOUT", 15*time.Second, &errs)
 	cfg.ResourceFetchTimeout = envDuration("RESIN_RESOURCE_FETCH_TIMEOUT", 30*time.Second, &errs)
+	cfg.InboundServerReadHeaderTimeout = envDuration("RESIN_INBOUND_SERVER_READ_HEADER_TIMEOUT", 15*time.Second, &errs)
+	cfg.InboundServerReadTimeout = envDuration("RESIN_INBOUND_SERVER_READ_TIMEOUT", 30*time.Second, &errs)
+	cfg.InboundServerWriteTimeout = envDuration("RESIN_INBOUND_SERVER_WRITE_TIMEOUT", 0, &errs)
+	cfg.InboundServerIdleTimeout = envDuration("RESIN_INBOUND_SERVER_IDLE_TIMEOUT", 90*time.Second, &errs)
+	cfg.InboundServerMaxHeaderBytes = envInt("RESIN_INBOUND_SERVER_MAX_HEADER_BYTES", 1<<20, &errs)
+	cfg.ProxyTransportDialTimeout = envDuration("RESIN_PROXY_TRANSPORT_DIAL_TIMEOUT", 15*time.Second, &errs)
+	cfg.ProxyTransportTLSHandshakeTimeout = envDuration("RESIN_PROXY_TRANSPORT_TLS_HANDSHAKE_TIMEOUT", 10*time.Second, &errs)
+	cfg.ProxyTransportResponseHeaderTimeout = envDuration("RESIN_PROXY_TRANSPORT_RESPONSE_HEADER_TIMEOUT", 30*time.Second, &errs)
 	cfg.ProxyTransportMaxIdleConns = envInt("RESIN_PROXY_TRANSPORT_MAX_IDLE_CONNS", 1024, &errs)
 	cfg.ProxyTransportMaxIdleConnsPerHost = envInt("RESIN_PROXY_TRANSPORT_MAX_IDLE_CONNS_PER_HOST", 64, &errs)
+	cfg.ProxyTransportMaxConnsPerHost = envInt("RESIN_PROXY_TRANSPORT_MAX_CONNS_PER_HOST", 256, &errs)
 	cfg.ProxyTransportIdleConnTimeout = envDuration("RESIN_PROXY_TRANSPORT_IDLE_CONN_TIMEOUT", 90*time.Second, &errs)
 
 	// --- Request log ---
@@ -290,8 +308,49 @@ func LoadEnvConfig() (*EnvConfig, error) {
 	if cfg.ResourceFetchTimeout <= 0 {
 		errs = append(errs, "RESIN_RESOURCE_FETCH_TIMEOUT must be positive")
 	}
+	if cfg.InboundServerReadHeaderTimeout <= 0 {
+		errs = append(errs, "RESIN_INBOUND_SERVER_READ_HEADER_TIMEOUT must be positive")
+	}
+	if cfg.InboundServerReadTimeout <= 0 {
+		errs = append(errs, "RESIN_INBOUND_SERVER_READ_TIMEOUT must be positive")
+	}
+	if cfg.InboundServerWriteTimeout < 0 {
+		errs = append(errs, "RESIN_INBOUND_SERVER_WRITE_TIMEOUT must be non-negative")
+	}
+	if cfg.InboundServerIdleTimeout <= 0 {
+		errs = append(errs, "RESIN_INBOUND_SERVER_IDLE_TIMEOUT must be positive")
+	}
+	validatePositive("RESIN_INBOUND_SERVER_MAX_HEADER_BYTES", cfg.InboundServerMaxHeaderBytes, &errs)
+	if cfg.InboundServerReadHeaderTimeout > cfg.InboundServerReadTimeout {
+		errs = append(
+			errs,
+			"RESIN_INBOUND_SERVER_READ_HEADER_TIMEOUT must be less than or equal to RESIN_INBOUND_SERVER_READ_TIMEOUT",
+		)
+	}
+	if cfg.InboundServerWriteTimeout > 0 && cfg.InboundServerReadTimeout > cfg.InboundServerWriteTimeout {
+		errs = append(
+			errs,
+			"RESIN_INBOUND_SERVER_READ_TIMEOUT must be less than or equal to RESIN_INBOUND_SERVER_WRITE_TIMEOUT when write timeout is enabled",
+		)
+	}
+	if cfg.InboundServerIdleTimeout < cfg.InboundServerReadTimeout {
+		errs = append(
+			errs,
+			"RESIN_INBOUND_SERVER_IDLE_TIMEOUT must be greater than or equal to RESIN_INBOUND_SERVER_READ_TIMEOUT",
+		)
+	}
+	if cfg.ProxyTransportDialTimeout <= 0 {
+		errs = append(errs, "RESIN_PROXY_TRANSPORT_DIAL_TIMEOUT must be positive")
+	}
+	if cfg.ProxyTransportTLSHandshakeTimeout <= 0 {
+		errs = append(errs, "RESIN_PROXY_TRANSPORT_TLS_HANDSHAKE_TIMEOUT must be positive")
+	}
+	if cfg.ProxyTransportResponseHeaderTimeout <= 0 {
+		errs = append(errs, "RESIN_PROXY_TRANSPORT_RESPONSE_HEADER_TIMEOUT must be positive")
+	}
 	validatePositive("RESIN_PROXY_TRANSPORT_MAX_IDLE_CONNS", cfg.ProxyTransportMaxIdleConns, &errs)
 	validatePositive("RESIN_PROXY_TRANSPORT_MAX_IDLE_CONNS_PER_HOST", cfg.ProxyTransportMaxIdleConnsPerHost, &errs)
+	validatePositive("RESIN_PROXY_TRANSPORT_MAX_CONNS_PER_HOST", cfg.ProxyTransportMaxConnsPerHost, &errs)
 	if cfg.ProxyTransportIdleConnTimeout <= 0 {
 		errs = append(errs, "RESIN_PROXY_TRANSPORT_IDLE_CONN_TIMEOUT must be positive")
 	}
@@ -299,6 +358,12 @@ func LoadEnvConfig() (*EnvConfig, error) {
 		errs = append(
 			errs,
 			"RESIN_PROXY_TRANSPORT_MAX_IDLE_CONNS_PER_HOST must be less than or equal to RESIN_PROXY_TRANSPORT_MAX_IDLE_CONNS",
+		)
+	}
+	if cfg.ProxyTransportMaxConnsPerHost < cfg.ProxyTransportMaxIdleConnsPerHost {
+		errs = append(
+			errs,
+			"RESIN_PROXY_TRANSPORT_MAX_CONNS_PER_HOST must be greater than or equal to RESIN_PROXY_TRANSPORT_MAX_IDLE_CONNS_PER_HOST",
 		)
 	}
 	validatePositive("RESIN_REQUEST_LOG_QUEUE_SIZE", cfg.RequestLogQueueSize, &errs)

@@ -3,6 +3,7 @@ package requestlog
 import (
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Resinat/Resin/internal/proxy"
@@ -20,6 +21,12 @@ type Service struct {
 
 	stopCh chan struct{}
 	wg     sync.WaitGroup
+
+	enqueuedTotal       atomic.Int64
+	droppedTotal        atomic.Int64
+	flushTotal          atomic.Int64
+	flushFailedTotal    atomic.Int64
+	flushedEntriesTotal atomic.Int64
 }
 
 // ServiceConfig configures the request log service.
@@ -30,7 +37,18 @@ type ServiceConfig struct {
 	FlushInterval time.Duration
 }
 
-// NewService creates a new request log service.
+// ServiceStatsSnapshot is a point-in-time snapshot of request-log queue stats.
+type ServiceStatsSnapshot struct {
+	EnqueuedTotal       int64 `json:"enqueued_total"`
+	DroppedTotal        int64 `json:"dropped_total"`
+	FlushTotal          int64 `json:"flush_total"`
+	FlushFailedTotal    int64 `json:"flush_failed_total"`
+	FlushedEntriesTotal int64 `json:"flushed_entries_total"`
+
+	QueueLen      int `json:"queue_len"`
+	QueueCapacity int `json:"queue_capacity"`
+}
+
 func NewService(cfg ServiceConfig) *Service {
 	queueSize := cfg.QueueSize
 	if queueSize <= 0 {
@@ -76,8 +94,10 @@ func (s *Service) Stop() {
 func (s *Service) EmitRequestLog(entry proxy.RequestLogEntry) {
 	select {
 	case s.queue <- entry:
+		s.enqueuedTotal.Add(1)
 	default:
 		// Queue full — drop entry to avoid blocking hot path.
+		s.droppedTotal.Add(1)
 	}
 }
 
@@ -187,10 +207,26 @@ func (s *Service) drainAndFlush(batch []proxy.RequestLogEntry) {
 }
 
 func (s *Service) flush(entries []proxy.RequestLogEntry) {
+	s.flushTotal.Add(1)
 	if n, err := s.repo.InsertBatch(entries); err != nil {
+		s.flushFailedTotal.Add(1)
 		log.Printf("[requestlog] flush %d entries failed: %v", len(entries), err)
 	} else if n > 0 {
+		s.flushedEntriesTotal.Add(int64(n))
 		log.Printf("[requestlog] flushed %d entries", n)
+	}
+}
+
+// StatsSnapshot returns a point-in-time snapshot of queue/flush counters.
+func (s *Service) StatsSnapshot() ServiceStatsSnapshot {
+	return ServiceStatsSnapshot{
+		EnqueuedTotal:       s.enqueuedTotal.Load(),
+		DroppedTotal:        s.droppedTotal.Load(),
+		FlushTotal:          s.flushTotal.Load(),
+		FlushFailedTotal:    s.flushFailedTotal.Load(),
+		FlushedEntriesTotal: s.flushedEntriesTotal.Load(),
+		QueueLen:            len(s.queue),
+		QueueCapacity:       cap(s.queue),
 	}
 }
 

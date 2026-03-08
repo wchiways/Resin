@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -51,6 +52,11 @@ const (
 	socks5RepTTLExpired              byte = 0x06
 	socks5RepCommandNotSupported     byte = 0x07
 	socks5RepAddressTypeNotSupported byte = 0x08
+
+	socks5StageGreeting = "socks5_greeting"
+	socks5StageAuth     = "socks5_auth"
+	socks5StageRequest  = "socks5_request"
+	socks5StageRoute    = "socks5_route"
 )
 
 // SOCKS5Config holds dependencies for the SOCKS5 server.
@@ -148,15 +154,22 @@ func (s *SOCKS5Server) handleConn(conn net.Conn) {
 		return
 	}
 
+	// Start request lifecycle only after authentication succeeds to avoid
+	// unauthenticated noise traffic filling the request-log queue.
+	lifecycle := newSOCKS5RequestLifecycle(s.events, conn.RemoteAddr().String())
+	defer lifecycle.finish()
+	lifecycle.setAccount(account)
+
 	// Phase 3: Request.
 	target, err := s.handleRequest(conn, platName, account)
 	if err != nil {
+		lifecycle.setUpstreamError(socks5StageRequest, err)
 		return
 	}
-	_ = target // consumed below in tunnel
+	lifecycle.setTarget(target, "")
 
 	// Phase 4: Route + Tunnel.
-	s.handleTunnel(conn, platName, account, target)
+	s.handleTunnel(conn, lifecycle, platName, account, target)
 }
 
 // handleGreeting reads the SOCKS5 greeting and selects an authentication method.
@@ -360,15 +373,11 @@ func (s *SOCKS5Server) handleRequest(conn net.Conn, platName, account string) (s
 }
 
 // handleTunnel performs routing, upstream dial, and bidirectional copy.
-func (s *SOCKS5Server) handleTunnel(conn net.Conn, platName, account, target string) {
-	lifecycle := newSOCKS5RequestLifecycle(s.events, conn.RemoteAddr().String())
-	lifecycle.setTarget(target, "")
-	defer lifecycle.finish()
-	lifecycle.setAccount(account)
-
+func (s *SOCKS5Server) handleTunnel(conn net.Conn, lifecycle *requestLifecycle, platName, account, target string) {
 	routed, routeErr := resolveRoutedOutbound(s.router, s.pool, platName, account, target)
 	if routeErr != nil {
 		lifecycle.setProxyError(routeErr)
+		lifecycle.setUpstreamError(socks5StageRoute, errors.New(routeErr.Message))
 		s.sendReply(conn, s.mapProxyErrorToReply(routeErr), nil, 0)
 		return
 	}

@@ -107,7 +107,7 @@ func newControlPlaneTestServerWithBodyLimit(
 		BuildTime: "2026-01-01T00:00:00Z",
 		StartedAt: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC),
 	}
-	srv := NewServer(0, testAdminToken, systemInfo, runtimeCfg, cp.EnvCfg, cp, apiMaxBodyBytes, nil, nil)
+	srv := NewServer(0, testAdminToken, systemInfo, runtimeCfg, cp.EnvCfg, cp, apiMaxBodyBytes, nil, nil, nil)
 	return srv, cp, runtimeCfg
 }
 
@@ -219,7 +219,10 @@ func (p contractRuntimeStats) CollectNodeEWMAs(platformID string) []float64 {
 	return nil
 }
 
-func newObservabilityTestServer(t *testing.T) (*Server, *requestlog.Repo, *metrics.Manager, string) {
+func newObservabilityTestServer(
+	t *testing.T,
+	requestlogSvc *requestlog.Service,
+) (*Server, *requestlog.Repo, *metrics.Manager, string) {
 	t.Helper()
 
 	root := t.TempDir()
@@ -260,7 +263,56 @@ func newObservabilityTestServer(t *testing.T) (*Server, *requestlog.Repo, *metri
 		RuntimeStats:                contractRuntimeStats{platformID: platformID},
 	})
 
-	srv := NewServer(0, testAdminToken, systemInfo, runtimeCfg, nil, nil, 1<<20, requestlogRepo, metricsManager)
+	srv := NewServer(
+		0,
+		testAdminToken,
+		systemInfo,
+		runtimeCfg,
+		&config.EnvConfig{
+			ListenAddress:                         "127.0.0.1",
+			ResinPort:                             2260,
+			Socks5Port:                            0,
+			InboundServerReadHeaderTimeout:        15 * time.Second,
+			InboundServerReadTimeout:              30 * time.Second,
+			InboundServerWriteTimeout:             35 * time.Second,
+			InboundServerIdleTimeout:              90 * time.Second,
+			ProxyTransportDialTimeout:             15 * time.Second,
+			ProxyTransportTLSHandshakeTimeout:     10 * time.Second,
+			ProxyTransportResponseHeaderTimeout:   30 * time.Second,
+			ProxyTransportIdleConnTimeout:         90 * time.Second,
+			RequestLogQueueSize:                   8192,
+			RequestLogQueueFlushBatchSize:         4096,
+			RequestLogQueueFlushInterval:          5 * time.Minute,
+			ProbeTimeout:                          15 * time.Second,
+			ResourceFetchTimeout:                  30 * time.Second,
+			ProxyTransportMaxIdleConns:            1024,
+			ProxyTransportMaxIdleConnsPerHost:     64,
+			MetricThroughputIntervalSeconds:       1,
+			MetricThroughputRetentionSeconds:      3600,
+			MetricBucketSeconds:                   300,
+			MetricConnectionsIntervalSeconds:      5,
+			MetricConnectionsRetentionSeconds:     18000,
+			MetricLeasesIntervalSeconds:           5,
+			MetricLeasesRetentionSeconds:          18000,
+			MetricLatencyBinWidthMS:               100,
+			MetricLatencyBinOverflowMS:            3000,
+			MaxLatencyTableEntries:                12,
+			ProbeConcurrency:                      1000,
+			GeoIPUpdateSchedule:                   "0 7 * * *",
+			DefaultPlatformStickyTTL:              7 * 24 * time.Hour,
+			DefaultPlatformRegexFilters:           []string{"^Provider/.*"},
+			DefaultPlatformRegionFilters:          []string{"us", "hk"},
+			DefaultPlatformReverseProxyMissAction: "TREAT_AS_EMPTY",
+			DefaultPlatformReverseProxyEmptyAccountBehavior: "ACCOUNT_HEADER_RULE",
+			DefaultPlatformReverseProxyFixedAccountHeader:   "Authorization",
+			DefaultPlatformAllocationPolicy:                 "BALANCED",
+		},
+		nil,
+		1<<20,
+		requestlogRepo,
+		metricsManager,
+		requestlogSvc,
+	)
 	return srv, requestlogRepo, metricsManager, platformID
 }
 
@@ -307,18 +359,20 @@ func seedObservabilityData(
 			RespBody:             []byte("resp-b-1"),
 		},
 		{
-			ID:          "log-contract-2",
-			StartedAtNs: time.Now().Add(-time.Minute).UnixNano(),
-			ProxyType:   proxy.ProxyTypeForward,
-			ClientIP:    "127.0.0.2",
-			PlatformID:  platformID,
-			Account:     "acct-2",
-			TargetHost:  "example.org",
-			TargetURL:   "https://example.org/resource",
-			DurationNs:  int64(12 * time.Millisecond),
-			NetOK:       false,
-			HTTPMethod:  "POST",
-			HTTPStatus:  502,
+			ID:            "log-contract-2",
+			StartedAtNs:   time.Now().Add(-time.Minute).UnixNano(),
+			ProxyType:     proxy.ProxyTypeForward,
+			ClientIP:      "127.0.0.2",
+			PlatformID:    platformID,
+			Account:       "acct-2",
+			TargetHost:    "example.org",
+			TargetURL:     "https://example.org/resource",
+			DurationNs:    int64(12 * time.Millisecond),
+			NetOK:         false,
+			HTTPMethod:    "POST",
+			HTTPStatus:    502,
+			ResinError:    "UPSTREAM_REQUEST_FAILED",
+			UpstreamStage: "forward_roundtrip",
 		},
 	})
 	if err != nil {
@@ -1317,6 +1371,17 @@ func TestAPIContract_ModuleAndActionEndpoints(t *testing.T) {
 		t.Fatalf("geoip update-now status: got %d, want %d, body=%s", rec.Code, http.StatusInternalServerError, rec.Body.String())
 	}
 	assertErrorCode(t, rec, "INTERNAL")
+	var geoUpdateErr ErrorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &geoUpdateErr); err != nil {
+		t.Fatalf("unmarshal geoip update-now error response: %v body=%q", err, rec.Body.String())
+	}
+	if !strings.Contains(geoUpdateErr.Error.Message, "geoip: no downloader configured") {
+		t.Fatalf(
+			"geoip update-now error message: got %q, want contains %q",
+			geoUpdateErr.Error.Message,
+			"geoip: no downloader configured",
+		)
+	}
 }
 
 func TestAPIContract_SubscriptionUpdateIntervalMinimum(t *testing.T) {
@@ -1537,7 +1602,7 @@ func TestAPIContract_UpsertRuleRequiresPathPrefix(t *testing.T) {
 }
 
 func TestAPIContract_RequestLogEndpoints(t *testing.T) {
-	srv, requestlogRepo, metricsManager, platformID := newObservabilityTestServer(t)
+	srv, requestlogRepo, metricsManager, platformID := newObservabilityTestServer(t, nil)
 	logID := seedObservabilityData(t, requestlogRepo, metricsManager, platformID)
 
 	rec := doJSONRequest(t, srv, http.MethodGet, "/api/v1/request-logs?platform_id="+platformID+"&limit=1", nil, true)
@@ -1678,6 +1743,104 @@ func TestAPIContract_RequestLogEndpoints(t *testing.T) {
 		t.Fatalf("strict partial filter items: got %T len=%d, want 0", itemsRaw, len(items))
 	}
 
+	rec = doJSONRequest(
+		t,
+		srv,
+		http.MethodGet,
+		"/api/v1/request-logs?proxy_type=3&limit=20",
+		nil,
+		true,
+	)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list request logs socks5 proxy_type status: got %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	body = decodeJSONMap(t, rec)
+	itemsRaw, ok = body["items"]
+	if !ok {
+		t.Fatalf("socks5 proxy_type filter missing items field: body=%s", rec.Body.String())
+	}
+	items, ok = itemsRaw.([]any)
+	if !ok || len(items) != 0 {
+		t.Fatalf("socks5 proxy_type filter items: got %T len=%d, want 0", itemsRaw, len(items))
+	}
+
+	rec = doJSONRequest(
+		t,
+		srv,
+		http.MethodGet,
+		"/api/v1/request-logs?upstream_stage="+url.QueryEscape("forward_roundtrip")+"&limit=20",
+		nil,
+		true,
+	)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list request logs by upstream_stage status: got %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	body = decodeJSONMap(t, rec)
+	itemsRaw, ok = body["items"]
+	if !ok {
+		t.Fatalf("upstream_stage filter missing items field: body=%s", rec.Body.String())
+	}
+	items, ok = itemsRaw.([]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("upstream_stage filter items: got %T len=%d, want 1", itemsRaw, len(items))
+	}
+	rowMap, ok = items[0].(map[string]any)
+	if !ok {
+		t.Fatalf("upstream_stage filter first item type: got %T", items[0])
+	}
+	if rowMap["id"] != "log-contract-2" {
+		t.Fatalf("upstream_stage filter first item id: got %v, want %q", rowMap["id"], "log-contract-2")
+	}
+
+	rec = doJSONRequest(
+		t,
+		srv,
+		http.MethodGet,
+		"/api/v1/request-logs?resin_error="+url.QueryEscape("UPSTREAM_REQUEST_FAILED")+"&limit=20",
+		nil,
+		true,
+	)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list request logs by resin_error status: got %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	body = decodeJSONMap(t, rec)
+	itemsRaw, ok = body["items"]
+	if !ok {
+		t.Fatalf("resin_error filter missing items field: body=%s", rec.Body.String())
+	}
+	items, ok = itemsRaw.([]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("resin_error filter items: got %T len=%d, want 1", itemsRaw, len(items))
+	}
+	rowMap, ok = items[0].(map[string]any)
+	if !ok {
+		t.Fatalf("resin_error filter first item type: got %T", items[0])
+	}
+	if rowMap["id"] != "log-contract-2" {
+		t.Fatalf("resin_error filter first item id: got %v, want %q", rowMap["id"], "log-contract-2")
+	}
+
+	rec = doJSONRequest(
+		t,
+		srv,
+		http.MethodGet,
+		"/api/v1/request-logs?resin_error="+url.QueryEscape("NOT_EXISTS")+"&limit=20",
+		nil,
+		true,
+	)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list request logs by missing resin_error status: got %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	body = decodeJSONMap(t, rec)
+	itemsRaw, ok = body["items"]
+	if !ok {
+		t.Fatalf("missing resin_error filter missing items field: body=%s", rec.Body.String())
+	}
+	items, ok = itemsRaw.([]any)
+	if !ok || len(items) != 0 {
+		t.Fatalf("missing resin_error filter items: got %T len=%d, want 0", itemsRaw, len(items))
+	}
+
 	rec = doJSONRequest(t, srv, http.MethodGet, "/api/v1/request-logs/"+logID, nil, true)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("get request log status: got %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
@@ -1728,13 +1891,18 @@ func TestAPIContract_RequestLogEndpoints(t *testing.T) {
 		"/api/v1/request-logs?limit=100001",
 		"/api/v1/request-logs?offset=1",
 		"/api/v1/request-logs?cursor=not-base64",
-		"/api/v1/request-logs?proxy_type=3",
+		"/api/v1/request-logs?proxy_type=0",
+		"/api/v1/request-logs?proxy_type=4",
 		"/api/v1/request-logs?net_ok=2",
 		"/api/v1/request-logs?net_ok=1",
 		"/api/v1/request-logs?net_ok=maybe",
 		"/api/v1/request-logs?http_status=bad",
 		"/api/v1/request-logs?http_status=99",
 		"/api/v1/request-logs?fuzzy=1",
+		"/api/v1/request-logs?upstream_stage=" + url.QueryEscape("bad stage"),
+		"/api/v1/request-logs?upstream_stage=" + url.QueryEscape(strings.Repeat("a", 65)),
+		"/api/v1/request-logs?resin_error=" + url.QueryEscape("UPSTREAM.REQUEST_FAILED"),
+		"/api/v1/request-logs?resin_error=" + url.QueryEscape(strings.Repeat("A", 65)),
 	}
 	for _, path := range invalidCases {
 		rec = doJSONRequest(t, srv, http.MethodGet, path, nil, true)
@@ -1745,8 +1913,150 @@ func TestAPIContract_RequestLogEndpoints(t *testing.T) {
 	}
 }
 
+func TestAPIContract_SystemStatus_RequestLogQueue(t *testing.T) {
+	repo := requestlog.NewRepo(t.TempDir(), 1<<20, 2)
+	if err := repo.Open(); err != nil {
+		t.Fatalf("requestlog repo open: %v", err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+
+	reqSvc := requestlog.NewService(requestlog.ServiceConfig{
+		Repo:          repo,
+		QueueSize:     4,
+		FlushBatch:    16,
+		FlushInterval: time.Hour,
+	})
+	t.Cleanup(reqSvc.Stop)
+
+	srv, _, _, _ := newObservabilityTestServer(t, reqSvc)
+	// Keep requestlog service stopped so queue stays full deterministically.
+
+	reqSvc.EmitRequestLog(proxy.RequestLogEntry{
+		ID:          "status-queue-1",
+		StartedAtNs: time.Now().UnixNano(),
+		ProxyType:   proxy.ProxyTypeForward,
+	})
+	reqSvc.EmitRequestLog(proxy.RequestLogEntry{
+		ID:          "status-queue-2",
+		StartedAtNs: time.Now().UnixNano(),
+		ProxyType:   proxy.ProxyTypeReverse,
+	})
+	reqSvc.EmitRequestLog(proxy.RequestLogEntry{
+		ID:          "status-queue-3",
+		StartedAtNs: time.Now().UnixNano(),
+		ProxyType:   proxy.ProxyTypeSOCKS5,
+	})
+	reqSvc.EmitRequestLog(proxy.RequestLogEntry{
+		ID:          "status-queue-4",
+		StartedAtNs: time.Now().UnixNano(),
+		ProxyType:   proxy.ProxyTypeForward,
+	})
+	// Queue is full now; this one should be dropped.
+	reqSvc.EmitRequestLog(proxy.RequestLogEntry{
+		ID:          "status-queue-drop",
+		StartedAtNs: time.Now().UnixNano(),
+		ProxyType:   proxy.ProxyTypeForward,
+	})
+
+	rec := doJSONRequest(t, srv, http.MethodGet, "/api/v1/system/status", nil, true)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("system status code: got %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	body := decodeJSONMap(t, rec)
+	queueRaw, ok := body["request_log_queue"]
+	if !ok {
+		t.Fatalf("system status missing request_log_queue: body=%s", rec.Body.String())
+	}
+	queue, ok := queueRaw.(map[string]any)
+	if !ok {
+		t.Fatalf("request_log_queue type: got %T", queueRaw)
+	}
+
+	if queue["queue_capacity"] != float64(4) {
+		t.Fatalf("queue_capacity: got %v, want 4", queue["queue_capacity"])
+	}
+	if queue["enqueued_total"] != float64(4) {
+		t.Fatalf("enqueued_total: got %v, want 4", queue["enqueued_total"])
+	}
+	if queue["dropped_total"] != float64(1) {
+		t.Fatalf("dropped_total: got %v, want 1", queue["dropped_total"])
+	}
+	if queueLen, ok := queue["queue_len"].(float64); !ok || queueLen < 0 || queueLen > 4 {
+		t.Fatalf("queue_len: got %v, want in [0,4]", queue["queue_len"])
+	}
+	if _, ok := queue["flush_total"]; !ok {
+		t.Fatalf("request_log_queue missing flush_total: %+v", queue)
+	}
+	if _, ok := queue["flush_failed_total"]; !ok {
+		t.Fatalf("request_log_queue missing flush_failed_total: %+v", queue)
+	}
+	stabilityRaw, ok := body["stability"]
+	if !ok {
+		t.Fatalf("system status missing stability: body=%s", rec.Body.String())
+	}
+	stability, ok := stabilityRaw.(map[string]any)
+	if !ok {
+		t.Fatalf("stability type: got %T", stabilityRaw)
+	}
+	if stability["proxy_healthy"] != true {
+		t.Fatalf("stability.proxy_healthy: got %v, want true", stability["proxy_healthy"])
+	}
+	if stability["queue_degraded"] != true {
+		t.Fatalf("stability.queue_degraded: got %v, want true", stability["queue_degraded"])
+	}
+	if stability["dropped_total"] != float64(1) {
+		t.Fatalf("stability.dropped_total: got %v, want 1", stability["dropped_total"])
+	}
+	if stability["dropped_rate"] != float64(20) {
+		t.Fatalf("stability.dropped_rate: got %v, want 20", stability["dropped_rate"])
+	}
+	if _, ok := stability["traffic_increased"]; !ok {
+		t.Fatalf("stability missing traffic_increased: %+v", stability)
+	}
+	if _, ok := stability["cancel_hint"]; !ok {
+		t.Fatalf("stability missing cancel_hint: %+v", stability)
+	}
+	if _, ok := stability["timeout_hint"]; !ok {
+		t.Fatalf("stability missing timeout_hint: %+v", stability)
+	}
+
+	timeoutsRaw, ok := body["timeouts"]
+	if !ok {
+		t.Fatalf("system status missing timeouts: body=%s", rec.Body.String())
+	}
+	timeouts, ok := timeoutsRaw.(map[string]any)
+	if !ok {
+		t.Fatalf("timeouts type: got %T", timeoutsRaw)
+	}
+	if timeouts["inbound_server_read_header_timeout"] != "15s" {
+		t.Fatalf("timeouts.inbound_server_read_header_timeout: got %v, want 15s", timeouts["inbound_server_read_header_timeout"])
+	}
+	if timeouts["inbound_server_read_timeout"] != "30s" {
+		t.Fatalf("timeouts.inbound_server_read_timeout: got %v, want 30s", timeouts["inbound_server_read_timeout"])
+	}
+	if timeouts["inbound_server_write_timeout"] != "35s" {
+		t.Fatalf("timeouts.inbound_server_write_timeout: got %v, want 35s", timeouts["inbound_server_write_timeout"])
+	}
+	if timeouts["inbound_server_idle_timeout"] != "1m30s" {
+		t.Fatalf("timeouts.inbound_server_idle_timeout: got %v, want 1m30s", timeouts["inbound_server_idle_timeout"])
+	}
+	if timeouts["proxy_transport_dial_timeout"] != "15s" {
+		t.Fatalf("timeouts.proxy_transport_dial_timeout: got %v, want 15s", timeouts["proxy_transport_dial_timeout"])
+	}
+	if timeouts["proxy_transport_tls_handshake_timeout"] != "10s" {
+		t.Fatalf("timeouts.proxy_transport_tls_handshake_timeout: got %v, want 10s", timeouts["proxy_transport_tls_handshake_timeout"])
+	}
+	if timeouts["proxy_transport_response_header_timeout"] != "30s" {
+		t.Fatalf("timeouts.proxy_transport_response_header_timeout: got %v, want 30s", timeouts["proxy_transport_response_header_timeout"])
+	}
+	if timeouts["proxy_transport_idle_conn_timeout"] != "1m30s" {
+		t.Fatalf("timeouts.proxy_transport_idle_conn_timeout: got %v, want 1m30s", timeouts["proxy_transport_idle_conn_timeout"])
+	}
+}
+
 func TestAPIContract_MetricsEndpoints(t *testing.T) {
-	srv, requestlogRepo, metricsManager, platformID := newObservabilityTestServer(t)
+	srv, requestlogRepo, metricsManager, platformID := newObservabilityTestServer(t, nil)
 	_ = seedObservabilityData(t, requestlogRepo, metricsManager, platformID)
 
 	from := url.QueryEscape(time.Unix(0, 0).UTC().Format(time.RFC3339Nano))
