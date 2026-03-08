@@ -41,6 +41,47 @@ func TestRetryDownloader_NoRetryOnHTTPStatusError(t *testing.T) {
 	}
 }
 
+func TestRetryDownloader_RetryOnRateLimitOrForbiddenStatusError(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+	}{
+		{name: "forbidden", statusCode: 403},
+		{name: "too_many_requests", statusCode: 429},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var pickerCalls, proxyCalls int
+
+			r := &RetryDownloader{
+				Direct: downloaderFunc(func(_ context.Context, url string) ([]byte, error) {
+					return nil, &HTTPStatusError{StatusCode: tc.statusCode, URL: url}
+				}),
+				NodePicker: func(_ string) (node.Hash, error) {
+					pickerCalls++
+					return node.HashFromRawOptions([]byte(`{"id":"retry-node-status"}`)), nil
+				},
+				ProxyFetch: func(_ context.Context, _ node.Hash, _ string) ([]byte, error) {
+					proxyCalls++
+					return []byte("via-proxy"), nil
+				},
+			}
+
+			body, err := r.Download(context.Background(), "https://example.com")
+			if err != nil {
+				t.Fatalf("expected proxy retry success, got %v", err)
+			}
+			if string(body) != "via-proxy" {
+				t.Fatalf("unexpected body %q", string(body))
+			}
+			if pickerCalls != 1 || proxyCalls != 1 {
+				t.Fatalf("expected one proxy retry, got picker=%d proxy=%d", pickerCalls, proxyCalls)
+			}
+		})
+	}
+}
+
 func TestRetryDownloader_NoRetryOnNonRetryableError(t *testing.T) {
 	var pickerCalls, proxyCalls int
 	inner := errors.New("bad url")
