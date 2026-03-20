@@ -481,7 +481,8 @@ func (p *ReverseProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	proxy := &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
 			req.URL = target
-			req.Host = parsed.Host
+			// Use normalized host (without default port) to match target URL
+			req.Host = normalizeHostPort(parsed.Host, parsed.Protocol)
 			stripForwardingIdentityHeaders(req.Header)
 			lifecycle.addEgressBytes(headerWireLen(req.Header))
 
