@@ -338,7 +338,9 @@ func (p *ReverseProxy) parsePathLegacy(rawPath string) (*parsedPath, *ProxyError
 }
 
 func buildReverseTargetURL(parsed *parsedPath, rawQuery string) (*url.URL, *ProxyError) {
-	targetURL := parsed.Protocol + "://" + parsed.Host
+	// Normalize host by removing default ports to avoid ambiguity
+	host := normalizeHostPort(parsed.Host, parsed.Protocol)
+	targetURL := parsed.Protocol + "://" + host
 	if parsed.Path != "" {
 		targetURL += "/" + parsed.Path
 	}
@@ -350,6 +352,38 @@ func buildReverseTargetURL(parsed *parsedPath, rawQuery string) (*url.URL, *Prox
 		return nil, ErrInvalidHost
 	}
 	return target, nil
+}
+
+// normalizeHostPort removes default ports from host to avoid ambiguity.
+// For https://example.com:443, returns example.com
+// For http://example.com:80, returns example.com
+// For non-default ports, returns host unchanged.
+func normalizeHostPort(host, protocol string) string {
+	// Check if host contains a port
+	colonIdx := strings.LastIndex(host, ":")
+	if colonIdx == -1 {
+		return host
+	}
+
+	// Handle IPv6 addresses like [::1]:443
+	if strings.HasPrefix(host, "[") {
+		// IPv6 with port: [::1]:443
+		if colonIdx > strings.Index(host, "]") {
+			port := host[colonIdx+1:]
+			if (protocol == "https" && port == "443") || (protocol == "http" && port == "80") {
+				return host[:colonIdx]
+			}
+		}
+		return host
+	}
+
+	// Regular hostname:port
+	port := host[colonIdx+1:]
+	if (protocol == "https" && port == "443") || (protocol == "http" && port == "80") {
+		return host[:colonIdx]
+	}
+
+	return host
 }
 
 func (p *ReverseProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
