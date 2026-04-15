@@ -170,21 +170,6 @@ URL 不允许包含查询部分与 ? 字符。
 ### 正向代理 CONNECT 特殊行为
 正向代理的 CONNECT 请求在成功建立隧道后，返回 `HTTP/1.1 200 Connection Established`。此后 Resin 不再介入 HTTP 语义——连接变为双向 TCP 隧道。隧道建立后的网络错误不会产生 HTTP 错误响应；连接将直接中断。
 
-### SOCKS5 代理
-
-当 `RESIN_SOCKS5_PORT` 设为非零值时，Resin 在独立端口启动 SOCKS5 代理服务器（RFC 1928/1929）。
-
-* 仅支持 CONNECT 命令（CMD=0x01），不支持 BIND 和 UDP ASSOCIATE。
-* 认证方式由 `RESIN_PROXY_TOKEN` 和 `RESIN_AUTH_VERSION` 决定：
-  * Token 非空时：强制要求 Username/Password 认证（0x02）。
-  * Token 为空时：优先 Username/Password（用于身份提取），也接受无认证（0x00）。
-* Username/Password 到 Platform/Account 的映射：
-  * `V1`：Username = `Platform.Account`，Password = `TOKEN`
-  * `LEGACY_V0`：Username = `TOKEN`，Password = `Platform:Account`
-  * Token 为空：Username 为可选身份标识，Password 忽略
-* 认证通过后，路由逻辑与正向代理完全一致（P2C 选路、粘性租约、熔断）。
-* 隧道建立后为双向 TCP 拷贝，流量计入 metrics 统计。
-
 ### 错误响应示例
 正向代理认证失败：
 ```
@@ -401,9 +386,10 @@ Resin 使用计数器熔断机制保护系统稳定性。
     * 失败：调用 `RecordResult(false)` 与 `RecordLatency(..., nil)`。连续失败将导致节点熔断。
 
 #### 主动探测的并发控制
-ProbeManager 采用 **SPSC (Single Producer Single Consumer)** 变体模型进行调度：
-* **执行**：所有主动探测任务共享一个全局信号量（默认 1000 并发），异步执行。
-* **背压**：受限于信号量，当并发满载时，调度协程会阻塞等待，天然形成了背压，防止创建过多 goroutine。
+ProbeManager 采用 **双优先级队列 + 固定 worker 池** 的调度模型：
+* **执行**：定期扫描器只负责把待探测节点入队；固定数量 worker 异步消费并执行探测。
+* **优先级**：支持高/普通双队列。高队列非空时仍有 10% 概率抽取普通队列，避免普通任务长期饥饿。
+* **限流**：异步并发由 worker 数量决定；同步探测接口（需要立即返回结果）不走异步队列限流路径。
 
 ### 被动延迟探测
 
@@ -1032,7 +1018,6 @@ Resin 需要做实事与历史的统计数据，用于 Dashboard 展示。
 
 ```json
 {
-  "user_agent": "sing-box",
   "request_log_enabled": true,
   "reverse_proxy_log_detail_enabled": false,
   "reverse_proxy_log_req_headers_max_bytes": 4096,
@@ -1060,7 +1045,6 @@ Resin 需要做实事与历史的统计数据，用于 Dashboard 展示。
 
 ```json
 {
-  "user_agent": "sing-box",
   "request_log_enabled": true,
   "reverse_proxy_log_detail_enabled": false,
   "reverse_proxy_log_req_headers_max_bytes": 4096,
@@ -1079,46 +1063,6 @@ Resin 需要做实事与历史的统计数据，用于 Dashboard 展示。
   "cache_flush_dirty_threshold": 1000
 }
 ```
-
-#### 获取系统运行状态
-
-**GET** `/system/status`
-
-返回系统运行时状态快照，包括版本信息、代理服务状态、内存使用和流量统计。
-
-```json
-{
-  "version": "1.0.0",
-  "git_commit": "abc1234",
-  "build_time": "2026-03-06T10:00:00Z",
-  "started_at": "2026-03-06T08:00:00Z",
-  "uptime_seconds": 7200,
-  "http_proxy": {
-    "enabled": true,
-    "listen_address": "0.0.0.0:2260"
-  },
-  "socks5_proxy": {
-    "enabled": true,
-    "listen_address": "0.0.0.0:1080"
-  },
-  "memory": {
-    "alloc_bytes": 12345678,
-    "sys_bytes": 23456789,
-    "heap_alloc_bytes": 11234567,
-    "num_gc": 42
-  },
-  "traffic": {
-    "total_ingress_bytes": 1234567890,
-    "total_egress_bytes": 987654321
-  }
-}
-```
-
-数据来源：
-* 版本/运行时：`service.SystemInfo` + `time.Since(startedAt)`
-* HTTP/SOCKS5：`config.EnvConfig` 中的 `ResinPort` / `Socks5Port`
-* 内存：`runtime.MemStats`
-* 流量：`metrics.Collector.Snapshot().IngressBytes / EgressBytes`
 
 #### 获取环境变量配置快照（只读）
 
@@ -2295,12 +2239,11 @@ GeoIP 与订阅的下载都有错误重试的需求。
 * RESIN_LOG_DIR：日志目录。默认 /var/log/resin
 * RESIN_LISTEN_ADDRESS：Resin 统一监听地址。默认 `0.0.0.0`
 * RESIN_PORT：Resin 单端口（控制面 API + 正向代理 + 反向代理 + WebUI）。默认 2260
-* RESIN_SOCKS5_PORT：SOCKS5 代理独立监听端口。默认 0（禁用）。非零时启用 SOCKS5 代理，端口不能与 RESIN_PORT 相同。
 * RESIN_API_MAX_BODY_BYTES：控制面 API（`/api/*`）请求体最大字节数。超限返回 `413 PAYLOAD_TOO_LARGE`。仅作用于控制面，不作用于正/反向代理数据面。默认 1048576（1 MiB）。
 
 核心设置：
 * `RESIN_MAX_LATENCY_TABLE_ENTRIES`：每个节点延迟表中“普通站点 LRU 区”的最大表项数。默认 12，最大 32（超限启动失败）。
-* `RESIN_PROBE_CONCURRENCY`：节点探测的最大并发数量，默认 1000。
+* `RESIN_PROBE_CONCURRENCY`：节点探测的最大并发数量。默认 1000，最大 10000（超限启动失败）。
 * `RESIN_GEOIP_UPDATE_SCHEDULE`：GeoIP 数据库自动更新的 Cron 表达式。默认 "0 7 * * *"。
 * `RESIN_DEFAULT_PLATFORM_STICKY_TTL`：默认平台粘性会话时长。默认 "168h"。
 * `RESIN_DEFAULT_PLATFORM_REGEX_FILTERS`：默认平台正则过滤器（JSON 字符串数组）。默认 `[]`。
@@ -2340,12 +2283,25 @@ GeoIP 与订阅的下载都有错误重试的需求。
 * `RESIN_METRIC_LATENCY_BIN_WIDTH_MS`：延迟统计桶大小，默认 100ms。
 * `RESIN_METRIC_LATENCY_BIN_OVERFLOW_MS`：延迟统计溢出值，默认 3000ms。
 
+### 节点默认 DNS 解析链
+Resin 托管节点的默认域名解析使用固定安全 DNS 链，不通过环境变量配置：
+1. `https://doh.pub/dns-query`
+2. `https://dns.alidns.com/dns-query`
+3. `tls://223.5.5.5`
+4. `local`
+
+说明：
+* 正常情况下，优先使用前 3 个安全 DNS 上游。
+* 当前 3 个安全 DNS 上游全部失败时，降级回退到 `local`，保证节点仍可解析和连通。
+* `doh.pub` 与 `dns.alidns.com` 这两个 DoH 域名自身的 bootstrap 解析继续使用 `local`。
+* 此默认 DNS 链仅作用于 Resin 内部 sing-box builder 上下文中的默认域名解析；订阅下载、GeoIP 下载等其他下载路径仍保持原有行为。
+
 ### 运行时全局设置项（支持热更新）
 Resin 支持通过 API (`PATCH /system/config`) 动态调整大部分全局运行参数。配置文件存储于数据库。
 以下所有配置项支持热更新。
 
 #### 基础设置
-* `UserAgent`: Resin 发起资源下载（订阅/GeoIP）HTTP 请求时使用的 User-Agent 头。默认 "sing-box"。
+资源下载（订阅/GeoIP）HTTP 请求固定使用中性 User-Agent：`Go-http-client/1.1`。
 
 #### 请求日志设置
 * `RequestLogEnabled`: 是否开启请求日志记录。此开关实时生效。默认 True。

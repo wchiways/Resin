@@ -62,7 +62,7 @@ func newTestServer() *Server {
 		BuildTime: "2026-01-01T00:00:00Z",
 		StartedAt: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC),
 	}
-	return NewServer(0, "test-admin-token", systemInfo, runtimeCfg, envCfg, nil, 1<<20, nil, nil, nil)
+	return NewServer(0, "test-admin-token", systemInfo, runtimeCfg, envCfg, nil, 1<<20, nil, nil)
 }
 
 // --- /healthz ---
@@ -226,9 +226,6 @@ func TestSystemConfig_OK(t *testing.T) {
 	}
 
 	// Check some default values
-	if body["user_agent"] != "sing-box" {
-		t.Errorf("user_agent: got %q, want %q", body["user_agent"], "sing-box")
-	}
 	if body["request_log_enabled"] != true {
 		t.Errorf("request_log_enabled: got %v, want true", body["request_log_enabled"])
 	}
@@ -341,8 +338,8 @@ func TestSystemEnvConfig_OK(t *testing.T) {
 	if _, ok := body["admin_token"]; ok {
 		t.Error("admin_token should not be exposed in /system/config/env")
 	}
-	if body["proxy_token"] != "test-proxy-token" {
-		t.Errorf("proxy_token: got %v, want %q", body["proxy_token"], "test-proxy-token")
+	if _, ok := body["proxy_token"]; ok {
+		t.Error("proxy_token should not be exposed in /system/config/env")
 	}
 }
 
@@ -375,9 +372,6 @@ func TestSystemDefaultConfig_OK(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	if body["user_agent"] != "sing-box" {
-		t.Errorf("user_agent: got %q, want %q", body["user_agent"], "sing-box")
-	}
 	if body["request_log_enabled"] != true {
 		t.Errorf("request_log_enabled: got %v, want true", body["request_log_enabled"])
 	}

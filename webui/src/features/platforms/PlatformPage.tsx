@@ -2,7 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Info, Plus, RefreshCw, Search, Sparkles } from "lucide-react";
 import { useState } from "react";
-import { useForm, useWatch } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
@@ -78,10 +78,7 @@ export function PlatformPage() {
     resolver: zodResolver(platformFormSchema),
     defaultValues: defaultPlatformFormValues,
   });
-  const createEmptyAccountBehavior = useWatch({
-    control: createForm.control,
-    name: "reverse_proxy_empty_account_behavior",
-  });
+  const createEmptyAccountBehavior = createForm.watch("reverse_proxy_empty_account_behavior");
 
   const createMutation = useMutation({
     mutationFn: createPlatform,
@@ -349,7 +346,15 @@ export function PlatformPage() {
                 <label className="field-label" htmlFor="create-region">
                   {t("地区过滤规则（可选）")}
                 </label>
-                <Textarea id="create-region" rows={4} placeholder={t("每行一条，如 hk / us")} {...createForm.register("region_filters_text")} />
+                <Textarea
+                  id="create-region"
+                  rows={4}
+                  placeholder={t("每行一条，如 hk / us / !hk")}
+                  {...createForm.register("region_filters_text")}
+                />
+                <p className="muted" style={{ marginTop: 4, fontSize: 12 }}>
+                  {t("支持反选：以 ! 开头可排除地区（如 !hk）。可与正选混用，最终结果为“先正选再排除”。")}
+                </p>
               </div>
 
               <div className="detail-actions">

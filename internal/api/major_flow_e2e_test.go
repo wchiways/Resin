@@ -62,7 +62,6 @@ func newMajorFlowHarness(t *testing.T, subscriptionUserAgent string) *majorFlowH
 	runtimeCfg := &atomic.Pointer[config.RuntimeConfig]{}
 	cfg := config.NewDefaultRuntimeConfig()
 	cfg.RequestLogEnabled = true
-	cfg.UserAgent = subscriptionUserAgent
 	runtimeCfg.Store(cfg)
 
 	subMgr := topology.NewSubscriptionManager()
@@ -149,7 +148,7 @@ func newMajorFlowHarness(t *testing.T, subscriptionUserAgent string) *majorFlowH
 		BuildTime: "2026-01-01T00:00:00Z",
 		StartedAt: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC),
 	}
-	apiSrv := NewServer(0, testAdminToken, systemInfo, runtimeCfg, cp.EnvCfg, cp, 1<<20, reqRepo, nil, nil)
+	apiSrv := NewServer(0, testAdminToken, systemInfo, runtimeCfg, cp.EnvCfg, cp, 1<<20, reqRepo, nil)
 
 	emitter := proxy.ConfigAwareEventEmitter{
 		Base: requestLogOnlyEmitter{svc: reqSvc},

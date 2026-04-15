@@ -1,9 +1,9 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, ArrowLeft, Copy, Info, Link2, RefreshCw } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Info, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useForm, useWatch } from "react-hook-form";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useForm } from "react-hook-form";
+import { useNavigate, useParams } from "react-router-dom";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
@@ -15,8 +15,6 @@ import { useToast } from "../../hooks/useToast";
 import { useI18n } from "../../i18n";
 import { formatApiErrorMessage } from "../../lib/error-message";
 import { formatGoDuration, formatRelativeTime } from "../../lib/time";
-import { getEnvConfig } from "../systemConfig/api";
-import { getSystemStatus } from "../serviceStatus/api";
 import { clearAllPlatformLeases, deletePlatform, getPlatform, resetPlatform, updatePlatform } from "./api";
 import {
   allocationPolicies,
@@ -36,82 +34,14 @@ import {
 } from "./formModel";
 import { PlatformMonitorPanel } from "./PlatformMonitorPanel";
 
-type PlatformDetailTab = "monitor" | "config" | "ops" | "env";
+type PlatformDetailTab = "monitor" | "config" | "ops";
 
 const ZERO_UUID = "00000000-0000-0000-0000-000000000000";
 const DETAIL_TABS: Array<{ key: PlatformDetailTab; label: string; hint: string }> = [
   { key: "monitor", label: "监控", hint: "平台运行态趋势和快照" },
   { key: "config", label: "配置", hint: "过滤规则与分配策略" },
-  { key: "env", label: "环境配置", hint: "HTTP 与 SOCKS5 环境变量配置示例" },
   { key: "ops", label: "运维", hint: "重置、清租约、删除操作" },
 ];
-
-type EnvShellItem = {
-  key: "bash" | "zsh" | "powershell";
-  title: string;
-  file: string;
-  content: string;
-};
-
-function normalizeHostPort(raw: string, fallback: string): string {
-  const input = raw.trim();
-  if (!input) {
-    return fallback;
-  }
-
-  if (input.startsWith("[") && input.includes("]:")) {
-    return input;
-  }
-
-  const separator = input.lastIndexOf(":");
-  if (separator <= 0 || separator >= input.length - 1) {
-    return fallback;
-  }
-
-  const rawHost = input.slice(0, separator);
-  const port = input.slice(separator + 1);
-  if (!/^\d+$/.test(port) || !rawHost) {
-    return fallback;
-  }
-
-  const host = rawHost === "0.0.0.0" ? "127.0.0.1" : rawHost;
-  if (host.includes(":")) {
-    return `[${host}]:${port}`;
-  }
-  return `${host}:${port}`;
-}
-
-function buildShellContents(platformName: string, proxyToken: string, httpHostPort: string, socksHostPort: string): EnvShellItem[] {
-  const httpProxy = `http://${platformName}:${proxyToken}@${httpHostPort}`;
-  const socks5Proxy = `socks5h://${platformName}:${proxyToken}@${socksHostPort}`;
-
-  return [
-    {
-      key: "bash",
-      title: "Bash",
-      file: "~/.bashrc",
-      content: `export http_proxy="${httpProxy}"
-export https_proxy="${httpProxy}"
-export all_proxy="${socks5Proxy}"`,
-    },
-    {
-      key: "zsh",
-      title: "Zsh",
-      file: "~/.zshrc",
-      content: `export http_proxy="${httpProxy}"
-export https_proxy="${httpProxy}"
-export all_proxy="${socks5Proxy}"`,
-    },
-    {
-      key: "powershell",
-      title: "PowerShell",
-      file: "$PROFILE",
-      content: `$env:http_proxy = "${httpProxy}"
-$env:https_proxy = "${httpProxy}"
-$env:all_proxy = "${socks5Proxy}"`,
-    },
-  ];
-}
 
 export function PlatformDetailPage() {
   const { t } = useI18n();
@@ -138,31 +68,11 @@ export function PlatformDetailPage() {
 
   const platform = platformQuery.data ?? null;
 
-  const statusQuery = useQuery({
-    queryKey: ["system-status"],
-    queryFn: getSystemStatus,
-    staleTime: 30_000,
-  });
-
-  const envConfigQuery = useQuery({
-    queryKey: ["system-config-env"],
-    queryFn: getEnvConfig,
-    staleTime: Infinity,
-  });
-
-  const proxyToken = envConfigQuery.data?.proxy_token ?? "RESIN_PROXY_TOKEN";
-  const httpHostPort = normalizeHostPort(statusQuery.data?.http_proxy.listen_address ?? "", "IP:Port");
-  const socksHostPort = normalizeHostPort(statusQuery.data?.socks5_proxy.listen_address ?? "", httpHostPort);
-  const shellItems = buildShellContents(platform?.name ?? "Platform", proxyToken, httpHostPort, socksHostPort);
-
   const editForm = useForm<PlatformFormValues>({
     resolver: zodResolver(platformFormSchema),
     defaultValues: defaultPlatformFormValues,
   });
-  const detailEmptyAccountBehavior = useWatch({
-    control: editForm.control,
-    name: "reverse_proxy_empty_account_behavior",
-  });
+  const detailEmptyAccountBehavior = editForm.watch("reverse_proxy_empty_account_behavior");
 
   useEffect(() => {
     if (!platform) {
@@ -277,15 +187,6 @@ export function PlatformDetailPage() {
     await clearLeasesMutation.mutateAsync();
   };
 
-  const handleCopyEnv = async (content: string) => {
-    try {
-      await navigator.clipboard.writeText(content);
-      showToast("success", t("环境配置已复制"));
-    } catch {
-      showToast("error", t("复制失败，请手动复制"));
-    }
-  };
-
   const stickyTTL = platform ? formatGoDuration(platform.sticky_ttl, t("默认")) : t("默认");
   const regionCount = platform?.region_filters.length ?? 0;
   const regexCount = platform?.regex_filters.length ?? 0;
@@ -374,10 +275,6 @@ export function PlatformDetailPage() {
                   <strong>{t(emptyAccountBehaviorLabel[platform.reverse_proxy_empty_account_behavior])}</strong>
                 </span>
               </div>
-              <Link to={`/nodes?platform_id=${encodeURIComponent(platform.id)}`} className="platform-detail-node-link">
-                <Link2 size={14} />
-                <span>{t("可路由节点")}</span>
-              </Link>
             </div>
           </Card>
 
@@ -541,9 +438,12 @@ export function PlatformDetailPage() {
                     <Textarea
                       id="detail-edit-region"
                       rows={6}
-                      placeholder={t("每行一条，如 hk / us")}
+                      placeholder={t("每行一条，如 hk / us / !hk")}
                       {...editForm.register("region_filters_text")}
                     />
+                    <p className="muted" style={{ marginTop: 4, fontSize: 12 }}>
+                      {t("支持反选：以 ! 开头可排除地区（如 !hk）。可与正选混用，最终结果为“先正选再排除”。")}
+                    </p>
                   </div>
 
                   <div className="platform-config-actions">
@@ -552,40 +452,6 @@ export function PlatformDetailPage() {
                     </Button>
                   </div>
                 </form>
-              </section>
-            ) : null}
-
-            {activeTab === "env" ? (
-              <section
-                id="platform-tabpanel-env"
-                role="tabpanel"
-                aria-labelledby="platform-tab-env"
-                className="platform-detail-tabpanel"
-              >
-                <div className="platform-drawer-section-head">
-                  <h4>{t("环境配置")}</h4>
-                  <p>{t("HTTP / SOCKS5 环境变量配置示例")}</p>
-                </div>
-
-                <p className="platform-env-modal-hint">{t("已使用当前平台名、RESIN_PROXY_TOKEN 与监听地址自动生成。")}</p>
-
-                <div className="platform-env-shell-list">
-                  {shellItems.map((item) => (
-                    <section key={item.key} className="platform-env-shell-card">
-                      <div className="platform-env-shell-head">
-                        <div>
-                          <h4>{item.title}</h4>
-                          <p>{t("写入 {{file}}", { file: item.file })}</p>
-                        </div>
-                        <Button variant="secondary" size="sm" onClick={() => void handleCopyEnv(item.content)}>
-                          <Copy size={14} />
-                          {t("一键复制")}
-                        </Button>
-                      </div>
-                      <pre className="platform-env-shell-code">{item.content}</pre>
-                    </section>
-                  ))}
-                </div>
               </section>
             ) : null}
 

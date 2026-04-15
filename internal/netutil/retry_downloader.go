@@ -3,7 +3,6 @@ package netutil
 import (
 	"context"
 	"errors"
-	"net/http"
 	"time"
 
 	"github.com/Resinat/Resin/internal/node"
@@ -82,18 +81,20 @@ func shouldRetryViaProxy(err error) bool {
 
 	var statusErr *HTTPStatusError
 	if errors.As(err, &statusErr) {
-		switch statusErr.StatusCode {
-		case http.StatusTooManyRequests, http.StatusForbidden:
-			// Some upstreams (e.g., GitHub API) may block direct egress by IP
-			// and still be reachable through proxy nodes.
-			return true
-		default:
-			return false
-		}
+		return shouldRetryHTTPStatusCode(statusErr.StatusCode)
 	}
 
 	var nonRetryable *NonRetryableError
 	return !errors.As(err, &nonRetryable)
+}
+
+func shouldRetryHTTPStatusCode(statusCode int) bool {
+	switch statusCode {
+	case 403, 429, 500, 502, 503, 504:
+		return true
+	default:
+		return false
+	}
 }
 
 func (r *RetryDownloader) proxyAttemptTimeout() time.Duration {

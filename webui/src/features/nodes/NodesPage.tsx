@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createColumnHelper } from "@tanstack/react-table";
 import { AlertTriangle, Eraser, Globe, RefreshCw, Sparkles, X, Zap } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useLocation } from "react-router-dom";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
@@ -23,8 +23,9 @@ import type { NodeSummary } from "./types";
 import { getAllRegions, getRegionName } from "./regions";
 import type { NodeListFilters, NodeSortBy, SortOrder } from "./types";
 
-type NodeStatusFilter = "all" | "healthy" | "circuit_open" | "error";
-type NodeDisplayStatus = "healthy" | "circuit_open" | "pending_test" | "error";
+type NodeStatusFilter = "all" | "healthy" | "circuit_open" | "error" | "disabled";
+type NodeDisplayStatus = "healthy" | "circuit_open" | "pending_test" | "error" | "disabled";
+type ProbeAction = "egress" | "latency";
 
 type NodeFilterDraft = {
   platform_id: string;
@@ -46,6 +47,20 @@ const defaultFilterDraft: NodeFilterDraft = {
 
 const PAGE_SIZE_OPTIONS = [20, 50, 100, 200, 500, 1000, 2000, 5000] as const;
 const EMPTY_PLATFORMS: Platform[] = [];
+const NODE_FILTER_ITEM_STYLE: CSSProperties = {
+  flex: "1 1 120px",
+  minWidth: "80px",
+  display: "flex",
+  flexDirection: "column",
+  gap: "0.25rem",
+};
+const NODE_FILTER_CONTROL_STYLE: CSSProperties = {
+  width: "100%",
+  padding: "4px 8px",
+  fontSize: "0.875rem",
+  minHeight: "32px",
+  height: "32px",
+};
 
 function parseBoolParam(value: string | null): boolean | undefined {
   if (value === null) {
@@ -69,7 +84,7 @@ function parseStatusParam(value: string | null): NodeStatusFilter | undefined {
   }
 
   const normalized = value.trim().toLowerCase();
-  if (normalized === "all" || normalized === "healthy" || normalized === "circuit_open" || normalized === "error") {
+  if (normalized === "all" || normalized === "healthy" || normalized === "circuit_open" || normalized === "error" || normalized === "disabled") {
     return normalized;
   }
 
@@ -84,6 +99,11 @@ function statusFromQuery(params: URLSearchParams): NodeStatusFilter {
 
   const hasOutbound = parseBoolParam(params.get("has_outbound"));
   const circuitOpen = parseBoolParam(params.get("circuit_open"));
+  const enabled = parseBoolParam(params.get("enabled"));
+
+  if (enabled === false) {
+    return "disabled";
+  }
 
   if (hasOutbound === false) {
     return "error";
@@ -121,18 +141,25 @@ function draftFromQuery(search: string): NodeFilterDraft {
 function draftToActiveFilters(draft: NodeFilterDraft): NodeListFilters {
   let circuit_open: boolean | undefined = undefined;
   let has_outbound: boolean | undefined = undefined;
+  let enabled: boolean | undefined = undefined;
 
   switch (draft.status) {
     case "healthy":
+      enabled = true;
       has_outbound = true;
       circuit_open = false;
       break;
     case "circuit_open":
+      enabled = true;
       has_outbound = true;
       circuit_open = true;
       break;
     case "error":
+      enabled = true;
       has_outbound = false;
+      break;
+    case "disabled":
+      enabled = false;
       break;
     case "all":
     default:
@@ -145,12 +172,16 @@ function draftToActiveFilters(draft: NodeFilterDraft): NodeListFilters {
     tag_keyword: draft.tag_keyword,
     region: draft.region,
     egress_ip: draft.egress_ip,
+    enabled,
     circuit_open,
     has_outbound,
   };
 }
 
-function firstTag(node: { tags: { tag: string }[] }): string {
+function firstTag(node: { display_tag?: string; tags: { tag: string }[] }): string {
+  if (node.display_tag && node.display_tag.trim()) {
+    return node.display_tag;
+  }
   if (!node.tags.length) {
     return "-";
   }
@@ -166,6 +197,9 @@ function isPendingTestNode(node: NodeSummary): boolean {
 }
 
 function getNodeDisplayStatus(node: NodeSummary): NodeDisplayStatus {
+  if (!node.enabled) {
+    return "disabled";
+  }
   if (!node.has_outbound) {
     return "error";
   }
@@ -227,7 +261,7 @@ function regionToFlag(region: string | undefined): string {
 }
 
 export function NodesPage() {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const location = useLocation();
   const [draftFilters, setDraftFilters] = useState<NodeFilterDraft>(() => draftFromQuery(location.search));
   const [activeFilters, setActiveFilters] = useState<NodeListFilters>(() =>
@@ -239,11 +273,15 @@ export function NodesPage() {
   const [pageSize, setPageSize] = useState<number>(200);
   const [selectedNodeHash, setSelectedNodeHash] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [pendingEgressHashes, setPendingEgressHashes] = useState<Set<string>>(() => new Set());
+  const [pendingLatencyHashes, setPendingLatencyHashes] = useState<Set<string>>(() => new Set());
   const { toasts, showToast, dismissToast } = useToast();
+  const pendingEgressHashesRef = useRef<Set<string>>(new Set());
+  const pendingLatencyHashesRef = useRef<Set<string>>(new Set());
 
   const queryClient = useQueryClient();
 
-  const allRegions = getAllRegions();
+  const allRegions = useMemo(() => getAllRegions(), [locale]);
 
   const platformsQuery = useQuery({
     queryKey: ["platforms", "all"],
@@ -297,9 +335,12 @@ export function NodesPage() {
 
   const totalPages = Math.max(1, Math.ceil(nodesPage.total / pageSize));
 
-  const selectedNode = selectedNodeHash
-    ? nodes.find((item) => item.node_hash === selectedNodeHash) ?? null
-    : null;
+  const selectedNode = useMemo(() => {
+    if (!selectedNodeHash) {
+      return null;
+    }
+    return nodes.find((item) => item.node_hash === selectedNodeHash) ?? null;
+  }, [nodes, selectedNodeHash]);
 
   const selectedHash = selectedNode?.node_hash || "";
 
@@ -372,12 +413,76 @@ export function NodesPage() {
     },
   });
 
+  const markProbePending = (hash: string, action: ProbeAction): boolean => {
+    if (action === "egress") {
+      if (pendingEgressHashesRef.current.has(hash)) {
+        return false;
+      }
+      const next = new Set(pendingEgressHashesRef.current);
+      next.add(hash);
+      pendingEgressHashesRef.current = next;
+      setPendingEgressHashes(next);
+      return true;
+    }
+
+    if (pendingLatencyHashesRef.current.has(hash)) {
+      return false;
+    }
+    const next = new Set(pendingLatencyHashesRef.current);
+    next.add(hash);
+    pendingLatencyHashesRef.current = next;
+    setPendingLatencyHashes(next);
+    return true;
+  };
+
+  const clearProbePending = (hash: string, action: ProbeAction) => {
+    if (action === "egress") {
+      if (!pendingEgressHashesRef.current.has(hash)) {
+        return;
+      }
+      const next = new Set(pendingEgressHashesRef.current);
+      next.delete(hash);
+      pendingEgressHashesRef.current = next;
+      setPendingEgressHashes(next);
+      return;
+    }
+
+    if (!pendingLatencyHashesRef.current.has(hash)) {
+      return;
+    }
+    const next = new Set(pendingLatencyHashesRef.current);
+    next.delete(hash);
+    pendingLatencyHashesRef.current = next;
+    setPendingLatencyHashes(next);
+  };
+
+  const isProbePending = (hash: string, action: ProbeAction): boolean =>
+    action === "egress" ? pendingEgressHashes.has(hash) : pendingLatencyHashes.has(hash);
+
   const runProbeEgress = async (hash: string) => {
-    await probeEgressMutation.mutateAsync(hash);
+    if (!markProbePending(hash, "egress")) {
+      return;
+    }
+    try {
+      await probeEgressMutation.mutateAsync(hash);
+    } catch {
+      // Mutation callbacks already surface the failure to the user.
+    } finally {
+      clearProbePending(hash, "egress");
+    }
   };
 
   const runProbeLatency = async (hash: string) => {
-    await probeLatencyMutation.mutateAsync(hash);
+    if (!markProbePending(hash, "latency")) {
+      return;
+    }
+    try {
+      await probeLatencyMutation.mutateAsync(hash);
+    } catch {
+      // Mutation callbacks already surface the failure to the user.
+    } finally {
+      clearProbePending(hash, "latency");
+    }
   };
 
   const handleFilterChange = (key: keyof NodeFilterDraft, value: string) => {
@@ -441,7 +546,7 @@ export function NodesPage() {
       cell: (info) => {
         const val = regionToFlag(info.getValue());
         return (
-          <div className="nodes-cell-truncate" title={val}>
+          <div style={{ maxWidth: "100px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={val}>
             {val}
           </div>
         );
@@ -452,7 +557,7 @@ export function NodesPage() {
       cell: (info) => {
         const val = info.getValue() || "-";
         return (
-          <div className="nodes-cell-truncate" title={val}>
+          <div style={{ maxWidth: "100px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={val}>
             {val}
           </div>
         );
@@ -496,6 +601,7 @@ export function NodesPage() {
       cell: (info) => {
         const node = info.row.original;
         const status = getNodeDisplayStatus(node);
+        if (status === "disabled") return <Badge variant="neutral">{t("禁用")}</Badge>;
         if (status === "error") return <Badge variant="danger">{t("错误")}</Badge>;
         if (status === "pending_test") return <Badge variant="muted">{t("待测")}</Badge>;
         if (status === "circuit_open") return <Badge variant="warning">{t("熔断")}</Badge>;
@@ -536,7 +642,7 @@ export function NodesPage() {
               variant="ghost"
               title={t("触发出口探测")}
               onClick={() => void runProbeEgress(node.node_hash)}
-              disabled={probeEgressMutation.isPending || probeLatencyMutation.isPending}
+              disabled={isProbePending(node.node_hash, "egress")}
             >
               <Globe size={14} />
             </Button>
@@ -545,7 +651,7 @@ export function NodesPage() {
               variant="ghost"
               title={t("触发延迟探测")}
               onClick={() => void runProbeLatency(node.node_hash)}
-              disabled={probeEgressMutation.isPending || probeLatencyMutation.isPending}
+              disabled={isProbePending(node.node_hash, "latency")}
             >
               <Zap size={14} />
             </Button>
@@ -573,9 +679,17 @@ export function NodesPage() {
             <p>{t("共 {{total}} 个节点，{{healthy}} 个健康 IP", { total: nodesPage.total, healthy: nodesPage.unique_healthy_egress_ips })}</p>
           </div>
 
-          <div className="nodes-inline-filters inline-filters inline-filters-sm">
-            <div className="nodes-filter-item inline-filter-item-sm">
-              <label htmlFor="node-tag-keyword" className="inline-filter-label">
+          <div
+            className="nodes-inline-filters"
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "0.5rem",
+              alignItems: "flex-end",
+            }}
+          >
+            <div style={NODE_FILTER_ITEM_STYLE}>
+              <label htmlFor="node-tag-keyword" style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
                 {t("节点名")}
               </label>
               <Input
@@ -583,19 +697,19 @@ export function NodesPage() {
                 value={draftFilters.tag_keyword}
                 onChange={(event) => handleFilterChange("tag_keyword", event.target.value)}
                 placeholder={t("模糊搜索")}
-                uiSize="sm"
+                style={NODE_FILTER_CONTROL_STYLE}
               />
             </div>
 
-            <div className="nodes-filter-item inline-filter-item-sm">
-              <label htmlFor="node-platform-id" className="inline-filter-label">
+            <div style={NODE_FILTER_ITEM_STYLE}>
+              <label htmlFor="node-platform-id" style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
                 {t("被此平台路由")}
               </label>
               <Select
                 id="node-platform-id"
                 value={draftFilters.platform_id}
                 onChange={(event) => handleFilterChange("platform_id", event.target.value)}
-                uiSize="sm"
+                style={NODE_FILTER_CONTROL_STYLE}
               >
                 <option value="">{t("无限制")}</option>
                 {platforms.map((p) => (
@@ -606,15 +720,15 @@ export function NodesPage() {
               </Select>
             </div>
 
-            <div className="nodes-filter-item inline-filter-item-sm">
-              <label htmlFor="node-subscription-id" className="inline-filter-label">
+            <div style={NODE_FILTER_ITEM_STYLE}>
+              <label htmlFor="node-subscription-id" style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
                 {t("来自此订阅")}
               </label>
               <Select
                 id="node-subscription-id"
                 value={draftFilters.subscription_id}
                 onChange={(event) => handleFilterChange("subscription_id", event.target.value)}
-                uiSize="sm"
+                style={NODE_FILTER_CONTROL_STYLE}
               >
                 <option value="">{t("全部")}</option>
                 {subscriptions.map((s) => (
@@ -625,15 +739,15 @@ export function NodesPage() {
               </Select>
             </div>
 
-            <div className="nodes-filter-item inline-filter-item-sm">
-              <label htmlFor="node-region" className="inline-filter-label">
+            <div style={NODE_FILTER_ITEM_STYLE}>
+              <label htmlFor="node-region" style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
                 {t("区域")}
               </label>
               <Select
                 id="node-region"
                 value={draftFilters.region}
                 onChange={(event) => handleFilterChange("region", event.target.value)}
-                uiSize="sm"
+                style={NODE_FILTER_CONTROL_STYLE}
               >
                 <option value="">{t("全部")}</option>
                 {allRegions.map((r) => (
@@ -644,8 +758,8 @@ export function NodesPage() {
               </Select>
             </div>
 
-            <div className="nodes-filter-item inline-filter-item-sm">
-              <label htmlFor="node-egress-ip" className="inline-filter-label">
+            <div style={NODE_FILTER_ITEM_STYLE}>
+              <label htmlFor="node-egress-ip" style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
                 {t("出口 IP")}
               </label>
               <Input
@@ -653,33 +767,34 @@ export function NodesPage() {
                 value={draftFilters.egress_ip}
                 onChange={(event) => handleFilterChange("egress_ip", event.target.value)}
                 placeholder="IP / CIDR"
-                uiSize="sm"
+                style={NODE_FILTER_CONTROL_STYLE}
               />
             </div>
 
-            <div className="nodes-filter-item inline-filter-item-sm">
-              <label htmlFor="node-status" className="inline-filter-label">
+            <div style={NODE_FILTER_ITEM_STYLE}>
+              <label htmlFor="node-status" style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
                 {t("状态")}
               </label>
               <Select
                 id="node-status"
                 value={draftFilters.status}
                 onChange={(event) => handleFilterChange("status", event.target.value)}
-                uiSize="sm"
+                style={NODE_FILTER_CONTROL_STYLE}
               >
                 <option value="all">{t("全部")}</option>
                 <option value="healthy">{t("健康")}</option>
                 <option value="circuit_open">{t("熔断 / 待测")}</option>
                 <option value="error">{t("错误")}</option>
+                <option value="disabled">{t("禁用")}</option>
               </Select>
             </div>
 
-            <div className="inline-filter-actions">
-              <Button size="sm" variant="secondary" onClick={refreshNodes} disabled={nodesQuery.isFetching} className="inline-filter-action-btn">
+            <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.125rem", marginLeft: "auto" }}>
+              <Button size="sm" variant="secondary" onClick={refreshNodes} disabled={nodesQuery.isFetching} style={{ minHeight: "32px", height: "32px", padding: "0 0.75rem", display: "flex", alignItems: "center", gap: "0.25rem" }}>
                 <RefreshCw size={16} className={nodesQuery.isFetching ? "spin" : undefined} />
                 {t("刷新")}
               </Button>
-              <Button size="sm" variant="secondary" onClick={resetFilters} className="inline-filter-action-btn">
+              <Button size="sm" variant="secondary" onClick={resetFilters} style={{ minHeight: "32px", height: "32px", padding: "0 0.75rem", display: "flex", alignItems: "center", gap: "0.25rem" }}>
                 <Eraser size={16} />
                 {t("重置")}
               </Button>
@@ -776,6 +891,8 @@ export function NodesPage() {
                           <div style={{ display: "flex", alignItems: "baseline", gap: "4px", flexWrap: "wrap" }}>
                             {status === "error" ? (
                               <Badge variant="danger">{t("错误")}</Badge>
+                            ) : status === "disabled" ? (
+                              <Badge variant="neutral">{t("禁用")}</Badge>
                             ) : status === "pending_test" ? (
                               <Badge variant="muted">{t("待测")}</Badge>
                             ) : status === "circuit_open" ? (
@@ -858,9 +975,9 @@ export function NodesPage() {
                     <Button
                       variant="secondary"
                       onClick={() => void runProbeEgress(detailNode.node_hash)}
-                      disabled={probeEgressMutation.isPending || probeLatencyMutation.isPending}
+                      disabled={isProbePending(detailNode.node_hash, "egress")}
                     >
-                      {probeEgressMutation.isPending ? t("探测中...") : t("触发出口探测")}
+                      {isProbePending(detailNode.node_hash, "egress") ? t("探测中...") : t("触发出口探测")}
                     </Button>
                   </div>
                   <div className="platform-op-item">
@@ -871,9 +988,9 @@ export function NodesPage() {
                     <Button
                       variant="secondary"
                       onClick={() => void runProbeLatency(detailNode.node_hash)}
-                      disabled={probeEgressMutation.isPending || probeLatencyMutation.isPending}
+                      disabled={isProbePending(detailNode.node_hash, "latency")}
                     >
-                      {probeLatencyMutation.isPending ? t("探测中...") : t("触发延迟探测")}
+                      {isProbePending(detailNode.node_hash, "latency") ? t("探测中...") : t("触发延迟探测")}
                     </Button>
                   </div>
                 </div>

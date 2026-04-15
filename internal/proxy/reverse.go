@@ -1,8 +1,6 @@
 package proxy
 
 import (
-	"context"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptrace"
@@ -116,31 +114,6 @@ type parsedPath struct {
 	// Path preserves the original escaped remaining path after host (may be
 	// empty), e.g. "v1/users/team%2Fa/profile".
 	Path string
-}
-
-type reverseCopyErrorTracker struct {
-	rc      io.ReadCloser
-	copyErr error
-}
-
-func newReverseCopyErrorTracker(rc io.ReadCloser) *reverseCopyErrorTracker {
-	return &reverseCopyErrorTracker{rc: rc}
-}
-
-func (c *reverseCopyErrorTracker) Read(p []byte) (int, error) {
-	n, err := c.rc.Read(p)
-	if err != nil && !errors.Is(err, io.EOF) && c.copyErr == nil {
-		c.copyErr = err
-	}
-	return n, err
-}
-
-func (c *reverseCopyErrorTracker) Close() error {
-	return c.rc.Close()
-}
-
-func (c *reverseCopyErrorTracker) CopyErr() error {
-	return c.copyErr
 }
 
 // forwardingIdentityHeaders are commonly used to disclose proxy chain identity.
@@ -338,9 +311,7 @@ func (p *ReverseProxy) parsePathLegacy(rawPath string) (*parsedPath, *ProxyError
 }
 
 func buildReverseTargetURL(parsed *parsedPath, rawQuery string) (*url.URL, *ProxyError) {
-	// Normalize host by removing default ports to avoid ambiguity
-	host := normalizeHostPort(parsed.Host, parsed.Protocol)
-	targetURL := parsed.Protocol + "://" + host
+	targetURL := parsed.Protocol + "://" + parsed.Host
 	if parsed.Path != "" {
 		targetURL += "/" + parsed.Path
 	}
@@ -352,38 +323,6 @@ func buildReverseTargetURL(parsed *parsedPath, rawQuery string) (*url.URL, *Prox
 		return nil, ErrInvalidHost
 	}
 	return target, nil
-}
-
-// normalizeHostPort removes default ports from host to avoid ambiguity.
-// For https://example.com:443, returns example.com
-// For http://example.com:80, returns example.com
-// For non-default ports, returns host unchanged.
-func normalizeHostPort(host, protocol string) string {
-	// Check if host contains a port
-	colonIdx := strings.LastIndex(host, ":")
-	if colonIdx == -1 {
-		return host
-	}
-
-	// Handle IPv6 addresses like [::1]:443
-	if strings.HasPrefix(host, "[") {
-		// IPv6 with port: [::1]:443
-		if colonIdx > strings.Index(host, "]") {
-			port := host[colonIdx+1:]
-			if (protocol == "https" && port == "443") || (protocol == "http" && port == "80") {
-				return host[:colonIdx]
-			}
-		}
-		return host
-	}
-
-	// Regular hostname:port
-	port := host[colonIdx+1:]
-	if (protocol == "https" && port == "443") || (protocol == "http" && port == "80") {
-		return host[:colonIdx]
-	}
-
-	return host
 }
 
 func (p *ReverseProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -400,16 +339,6 @@ func (p *ReverseProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		detailCfg = provider.reverseDetailCaptureConfig()
 	}
 
-	recordReverseCopyFailure := func(copyErr error) bool {
-		if copyErr == nil {
-			return false
-		}
-		if r != nil && errors.Is(r.Context().Err(), context.Canceled) {
-			return false
-		}
-		return classifyUpstreamError(copyErr) != nil
-	}
-
 	parsed, perr := p.parsePath(r.URL.EscapedPath())
 	if perr != nil {
 		writeProxyError(w, perr)
@@ -418,11 +347,11 @@ func (p *ReverseProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	lifecycle := newRequestLifecycle(p.events, r, ProxyTypeReverse, false)
 	lifecycle.setTarget(parsed.Host, "")
+	upstreamTrace := newUpstreamRequestTrace()
+	var pendingEgressHeaderBytes int64
 	var egressBodyCounter *countingReadCloser
 	var ingressBodyCounter *countingReadCloser
 	var upgradedStreamCounter *countingReadWriteCloser
-	var reverseIngressCopyErrorTracker *reverseCopyErrorTracker
-	var reverseBodyCopyCheckRequired bool
 	if detailCfg.Enabled {
 		reqHeaders, reqHeadersLen, reqHeadersTruncated := captureHeadersWithLimit(r.Header, detailCfg.ReqHeadersMaxBytes)
 		lifecycle.setReqHeadersCaptured(reqHeaders, reqHeadersLen, reqHeadersTruncated)
@@ -481,17 +410,20 @@ func (p *ReverseProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	proxy := &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
 			req.URL = target
-			// Use normalized host (without default port) to match target URL
-			req.Host = normalizeHostPort(parsed.Host, parsed.Protocol)
+			req.Host = parsed.Host
 			stripForwardingIdentityHeaders(req.Header)
-			lifecycle.addEgressBytes(headerWireLen(req.Header))
+			pendingEgressHeaderBytes = headerWireLen(req.Header)
+
+			// Compose request-progress trace first so egress commit logic can
+			// observe whether the upstream request was actually written.
+			reqCtx := httptrace.WithClientTrace(req.Context(), upstreamTrace.clientTrace())
 
 			// Add httptrace for TLS latency measurement on HTTPS.
 			if parsed.Protocol == "https" {
 				reporter := newReverseLatencyReporter(p.health, nodeHashRaw, domain)
-				reqCtx := httptrace.WithClientTrace(req.Context(), reporter.clientTrace())
-				*req = *req.WithContext(reqCtx)
+				reqCtx = httptrace.WithClientTrace(reqCtx, reporter.clientTrace())
 			}
+			*req = *req.WithContext(reqCtx)
 		},
 		Transport: transport,
 		ErrorHandler: func(rw http.ResponseWriter, req *http.Request, err error) {
@@ -529,13 +461,12 @@ func (p *ReverseProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					respHeaders, respHeadersLen, respHeadersTruncated := captureHeadersWithLimit(resp.Header, detailCfg.RespHeadersMaxBytes)
 					lifecycle.setRespHeadersCaptured(respHeaders, respHeadersLen, respHeadersTruncated)
 				}
-				reverseBodyCopyCheckRequired = true
+				lifecycle.setNetOK(true)
+				go p.health.RecordResult(nodeHashRaw, true)
 				return nil
 			}
 			if resp.Body != nil && resp.Body != http.NoBody {
 				body := resp.Body
-				reverseIngressCopyErrorTracker = newReverseCopyErrorTracker(body)
-				body = reverseIngressCopyErrorTracker
 				if detailCfg.Enabled {
 					respHeaders, respHeadersLen, respHeadersTruncated := captureHeadersWithLimit(resp.Header, detailCfg.RespHeadersMaxBytes)
 					lifecycle.setRespHeadersCaptured(respHeaders, respHeadersLen, respHeadersTruncated)
@@ -549,14 +480,23 @@ func (p *ReverseProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				respHeaders, respHeadersLen, respHeadersTruncated := captureHeadersWithLimit(resp.Header, detailCfg.RespHeadersMaxBytes)
 				lifecycle.setRespHeadersCaptured(respHeaders, respHeadersLen, respHeadersTruncated)
 			}
-			reverseBodyCopyCheckRequired = true
+			// Intentional coarse-grained policy:
+			// mark node success once upstream response headers arrive.
+			// Further attribution for mid-body stream failures is expensive and noisy
+			// (client abort vs upstream reset vs network blip), and the added
+			// complexity is not worth it for the current phase.
+			lifecycle.setNetOK(true)
+			go p.health.RecordResult(nodeHashRaw, true)
 			return nil
 		},
 	}
 
 	proxy.ServeHTTP(w, r)
-	if egressBodyCounter != nil {
-		lifecycle.addEgressBytes(egressBodyCounter.Total())
+	if upstreamTrace.shouldCommitEgress() {
+		lifecycle.addEgressBytes(pendingEgressHeaderBytes)
+		if egressBodyCounter != nil {
+			lifecycle.addEgressBytes(egressBodyCounter.Total())
+		}
 	}
 	if ingressBodyCounter != nil {
 		lifecycle.addIngressBytes(ingressBodyCounter.Total())
@@ -564,21 +504,6 @@ func (p *ReverseProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if upgradedStreamCounter != nil {
 		lifecycle.addIngressBytes(upgradedStreamCounter.TotalRead())
 		lifecycle.addEgressBytes(upgradedStreamCounter.TotalWrite())
-	}
-	if reverseBodyCopyCheckRequired {
-		reverseCopyErr := error(nil)
-		if reverseIngressCopyErrorTracker != nil {
-			reverseCopyErr = reverseIngressCopyErrorTracker.CopyErr()
-		}
-		if recordReverseCopyFailure(reverseCopyErr) {
-			lifecycle.setProxyError(ErrUpstreamRequestFailed)
-			lifecycle.setUpstreamError("reverse_upstream_to_client_copy", reverseCopyErr)
-			lifecycle.setNetOK(false)
-			go p.health.RecordResult(nodeHashRaw, false)
-			return
-		}
-		lifecycle.setNetOK(true)
-		go p.health.RecordResult(nodeHashRaw, true)
 	}
 }
 

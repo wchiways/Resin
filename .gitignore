@@ -1,6 +1,12 @@
 /resin
 sing-box-reference
 .agents
+.devcontainer
+start-instance.sh
+/*.log
+*.pid
 .claude/
+.vscode/
 .idea/
+.github/
 .spec-workflow/
