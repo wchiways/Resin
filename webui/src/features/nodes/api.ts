@@ -13,6 +13,7 @@ type ApiNodeSummary = Omit<NodeSummary, "tags"> & {
   tags?: NodeSummary["tags"] | null;
   enabled?: boolean | null;
   display_tag?: string | null;
+  protocol?: string | null;
   last_error?: string | null;
   circuit_open_since?: string | null;
   egress_ip?: string | null;
@@ -30,6 +31,7 @@ function normalizeNode(raw: ApiNodeSummary): NodeSummary {
     ...rest,
     enabled: raw.enabled !== false,
     display_tag: raw.display_tag || "",
+    protocol: raw.protocol || "",
     tags: Array.isArray(raw.tags) ? raw.tags : [],
     last_error: raw.last_error || "",
     circuit_open_since: raw.circuit_open_since || "",

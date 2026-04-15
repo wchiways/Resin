@@ -8,5 +8,4 @@ start-instance.sh
 .claude/
 .vscode/
 .idea/
-.github/
 .spec-workflow/

@@ -1927,6 +1927,9 @@ func parseURILineSubscription(text string) ([]ParsedNode, bool) {
 		case strings.HasPrefix(lower, "hy2://"):
 			recognized = true
 			node, ok = parseHysteria2URI(line)
+		case strings.HasPrefix(lower, "anytls://"):
+			recognized = true
+			node, ok = parseAnytlsURI(line)
 		case strings.HasPrefix(lower, "ssd://"):
 			recognized = true
 			extraNode, ok = parseSSDURI(line)
@@ -3408,6 +3411,72 @@ func parseHysteria2URI(uri string) (ParsedNode, bool) {
 			obfs["password"] = obfsPassword
 		}
 		outbound["obfs"] = obfs
+	}
+	return buildParsedNode(outbound)
+}
+
+func parseAnytlsURI(uri string) (ParsedNode, bool) {
+	u, err := url.Parse(uri)
+	if err != nil {
+		return ParsedNode{}, false
+	}
+	password := ""
+	if u.User != nil {
+		password = strings.TrimSpace(u.User.Username())
+	}
+	server := strings.TrimSpace(u.Hostname())
+	if password == "" || server == "" {
+		return ParsedNode{}, false
+	}
+
+	port := uriPortOrDefault(u, 443)
+	tag := decodeTag(u.Fragment)
+	if tag == "" {
+		tag = defaultTag("", "anytls", server, port)
+	}
+
+	query := u.Query()
+	serverName := strings.TrimSpace(firstNonEmpty(
+		query.Get("sni"),
+		query.Get("peer"),
+		query.Get("servername"),
+		server,
+	))
+	tls := map[string]any{
+		"enabled":     true,
+		"server_name": serverName,
+	}
+	if queryBool(query, "insecure", "allowInsecure") {
+		tls["insecure"] = true
+	}
+	if alpn := splitALPN(query.Get("alpn")); len(alpn) > 0 {
+		tls["alpn"] = alpn
+	}
+	if fingerprint := strings.TrimSpace(firstNonEmpty(
+		query.Get("fp"),
+		query.Get("fingerprint"),
+		query.Get("client-fingerprint"),
+		query.Get("client_fingerprint"),
+	)); fingerprint != "" {
+		tls["utls"] = map[string]any{
+			"enabled":     true,
+			"fingerprint": fingerprint,
+		}
+	}
+
+	outbound := map[string]any{
+		"type":        "anytls",
+		"tag":         tag,
+		"server":      server,
+		"server_port": port,
+		"password":    password,
+		"tls":         tls,
+	}
+	if interval, ok := normalizeDurationValue(query.Get("idle-session-check-interval"), "s"); ok {
+		outbound["idle_session_check_interval"] = interval
+	}
+	if timeout, ok := normalizeDurationValue(query.Get("idle-session-timeout"), "s"); ok {
+		outbound["idle_session_timeout"] = timeout
 	}
 	return buildParsedNode(outbound)
 }

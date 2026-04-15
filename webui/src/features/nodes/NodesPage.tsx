@@ -536,6 +536,13 @@ export function NodesPage() {
         </div>
       ),
     }),
+    col.accessor("protocol", {
+      header: t("协议"),
+      cell: (info) => {
+        const val = info.getValue() || "-";
+        return <Badge variant="muted">{val}</Badge>;
+      },
+    }),
     col.accessor("region", {
       header: () => (
         <button type="button" className="table-sort-btn" onClick={() => changeSort("region")}>
@@ -874,6 +881,10 @@ export function NodesPage() {
                 </div>
 
                 <div className="stats-grid">
+                  <div>
+                    <span>{t("协议")}</span>
+                    <p>{detailNode.protocol || "-"}</p>
+                  </div>
                   <div>
                     <span>{t("创建时间")}</span>
                     <p>{formatDateTime(detailNode.created_at)}</p>

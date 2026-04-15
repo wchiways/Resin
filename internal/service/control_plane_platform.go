@@ -590,6 +590,7 @@ type NodeSummary struct {
 	LastAuthorityLatencyProbeAttempt string    `json:"last_authority_latency_probe_attempt,omitempty"`
 	ReferenceLatencyMs               *float64  `json:"reference_latency_ms,omitempty"`
 	LastEgressUpdateAttempt          string    `json:"last_egress_update_attempt,omitempty"`
+	Protocol                         string    `json:"protocol,omitempty"`
 	Tags                             []NodeTag `json:"tags"`
 }
 
@@ -614,6 +615,14 @@ func (s *ControlPlaneService) nodeEntryToSummary(h node.Hash, entry *node.NodeEn
 		HasOutbound:  entry.HasOutbound(),
 		LastError:    entry.GetLastError(),
 		FailureCount: int(entry.FailureCount.Load()),
+	}
+
+	// Extract protocol type from raw options.
+	var rawType struct {
+		Type string `json:"type"`
+	}
+	if json.Unmarshal(entry.RawOptions, &rawType) == nil && rawType.Type != "" {
+		ns.Protocol = rawType.Type
 	}
 
 	if s != nil && s.Pool != nil {

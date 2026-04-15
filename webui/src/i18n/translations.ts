@@ -98,6 +98,7 @@ const EXACT_ZH_TO_EN: Record<string, string> = {
   "结束时间": "End Time",
   "名称": "Name",
   "节点名": "Node Name",
+  "协议": "Protocol",
   "节点": "Node",
   "节点数": "Node Count",
   "节点列表": "Node List",

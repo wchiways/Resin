@@ -2701,6 +2701,100 @@ func mustSliceField(t *testing.T, obj map[string]any, key string) []any {
 	return out
 }
 
+func TestParseGeneralSubscription_AnytlsURI(t *testing.T) {
+	data := []byte(
+		"anytls://mypassword@example.com:443/?sni=real.example.com#my-anytls",
+	)
+
+	nodes, err := ParseGeneralSubscription(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nodes) != 1 {
+		t.Fatalf("expected 1 parsed node, got %d", len(nodes))
+	}
+
+	obj := parseNodeRaw(t, nodes[0].RawOptions)
+	if got := obj["type"]; got != "anytls" {
+		t.Fatalf("type: got %v", got)
+	}
+	if got := obj["server"]; got != "example.com" {
+		t.Fatalf("server: got %v", got)
+	}
+	if got := obj["server_port"]; got != float64(443) {
+		t.Fatalf("server_port: got %v", got)
+	}
+	if got := obj["password"]; got != "mypassword" {
+		t.Fatalf("password: got %v", got)
+	}
+	if got := obj["tag"]; got != "my-anytls" {
+		t.Fatalf("tag: got %v, want my-anytls", got)
+	}
+	tls := mustMapField(t, obj, "tls")
+	if got := tls["enabled"]; got != true {
+		t.Fatalf("tls.enabled: got %v", got)
+	}
+	if got := tls["server_name"]; got != "real.example.com" {
+		t.Fatalf("tls.server_name: got %v", got)
+	}
+}
+
+func TestParseGeneralSubscription_AnytlsURIAdvancedFields(t *testing.T) {
+	data := []byte(
+		"anytls://letmein@example.com:8443/?sni=sni.example.com&insecure=1&alpn=h2%2Chttp%2F1.1&fp=chrome",
+	)
+
+	nodes, err := ParseGeneralSubscription(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nodes) != 1 {
+		t.Fatalf("expected 1 parsed node, got %d", len(nodes))
+	}
+
+	obj := parseNodeRaw(t, nodes[0].RawOptions)
+	if got := obj["type"]; got != "anytls" {
+		t.Fatalf("type: got %v", got)
+	}
+	if got := obj["server_port"]; got != float64(8443) {
+		t.Fatalf("server_port: got %v", got)
+	}
+	tls := mustMapField(t, obj, "tls")
+	if got := tls["insecure"]; got != true {
+		t.Fatalf("tls.insecure: got %v", got)
+	}
+	alpn, ok := tls["alpn"].([]any)
+	if !ok {
+		t.Fatalf("tls.alpn expected []any, got %T", tls["alpn"])
+	}
+	if len(alpn) != 2 || alpn[0] != "h2" || alpn[1] != "http/1.1" {
+		t.Fatalf("tls.alpn: got %v, want [h2 http/1.1]", alpn)
+	}
+	utls := mustMapField(t, tls, "utls")
+	if got := utls["fingerprint"]; got != "chrome" {
+		t.Fatalf("tls.utls.fingerprint: got %v", got)
+	}
+}
+
+func TestParseGeneralSubscription_AnytlsURIDefaultPort(t *testing.T) {
+	data := []byte(
+		"anytls://pass@example.com/?sni=example.com",
+	)
+
+	nodes, err := ParseGeneralSubscription(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nodes) != 1 {
+		t.Fatalf("expected 1 parsed node, got %d", len(nodes))
+	}
+
+	obj := parseNodeRaw(t, nodes[0].RawOptions)
+	if got := obj["server_port"]; got != float64(443) {
+		t.Fatalf("server_port: got %v, want 443 (default)", got)
+	}
+}
+
 func containsAnyString(values []any, expected string) bool {
 	for _, value := range values {
 		if value == expected {
